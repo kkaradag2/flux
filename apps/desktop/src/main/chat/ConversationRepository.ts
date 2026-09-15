@@ -5,7 +5,7 @@ import type { AgentDefinition } from '../../shared/management-api';
 import type { ConversationDetail, ConversationSummary, ConversationMessage } from '../../shared/conversation-api';
 import { storedAgent } from '../management/validation';
 
-export type Conversation = ConversationDetail & { codexThreadId: string | null; agentDefinition: AgentDefinition };
+export type Conversation = ConversationDetail & { codexThreadId: string | null; worktreePath?: string; agentDefinition: AgentDefinition };
 export interface ConversationStore {
   get(id: string): Promise<Conversation>;
   list(): Promise<Conversation[]>;
@@ -21,7 +21,8 @@ export function conversationId(value: unknown): string {
 export function conversationTitle(prompt: string): string { return Array.from(prompt.replace(/\s+/gu, ' ').trim()).slice(0, 60).join(''); }
 export function conversationSummary(value: Conversation): ConversationSummary {
   const { id, projectId, branchName, teamId, leadAgentId, title, status, interrupted, createdAt, updatedAt } = value;
-  return { id, projectId, branchName, teamId, leadAgentId, title, status, interrupted, createdAt, updatedAt };
+  return { id, projectId, branchName, teamId, leadAgentId, title, status, interrupted, createdAt, updatedAt,
+    ...(value.worktreeStatus ? { baseBranch: value.baseBranch, workBranch: value.workBranch, worktreeStatus: value.worktreeStatus, worktreeCreatedAt: value.worktreeCreatedAt } : {}) };
 }
 export function conversationDetail(value: Conversation): ConversationDetail {
   return { ...conversationSummary(value), agentSnapshot: structuredClone(value.agentSnapshot), messages: structuredClone(value.messages) };
@@ -48,7 +49,10 @@ function parse(value: unknown): Conversation {
     return { id: text(message.id), role, content: message.content, agentId: role === 'agent' ? agentDefinition.id : null, createdAt: date(message.createdAt), status };
   });
   if (new Set(messages.map(message => message.id)).size !== messages.length) throw new ConversationStorageError();
-  return { id: conversationId(data.id), projectId: text(data.projectId), branchName: text(data.branchName), teamId: text(data.teamId), leadAgentId: agentDefinition.id,
+  const worktree = data.worktreeStatus;
+  if (worktree !== undefined && !['creating', 'ready', 'failed', 'missing'].includes(String(worktree))) throw new ConversationStorageError();
+  const worktreeFields = worktree === undefined ? {} : { baseBranch: text(data.baseBranch), workBranch: text(data.workBranch), worktreePath: text(data.worktreePath, 32767), worktreeStatus: worktree as NonNullable<Conversation['worktreeStatus']>, worktreeCreatedAt: data.worktreeCreatedAt === null ? null : date(data.worktreeCreatedAt) };
+  return { ...worktreeFields, id: conversationId(data.id), projectId: text(data.projectId), branchName: text(data.branchName), teamId: text(data.teamId), leadAgentId: agentDefinition.id,
     codexThreadId: data.codexThreadId === null ? null : text(data.codexThreadId, 200), title, status, interrupted: data.interrupted,
     createdAt: date(data.createdAt), updatedAt: date(data.updatedAt), messages, agentDefinition,
     agentSnapshot: { id: agentDefinition.id, name: agentDefinition.name, avatar: structuredClone(agentDefinition.avatar) } };

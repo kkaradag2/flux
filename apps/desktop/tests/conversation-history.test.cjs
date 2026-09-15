@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '../../..');
 const base = path.join(root, '.cache/conversation-history-tests', String(Date.now()));
 
 test('Persistent conversation history', async t => {
-  for (const directory of ['main/app-server', 'main/chat', 'main/management', 'shared']) {
+  for (const directory of ['main/app-server', 'main/chat', 'main/management', 'main/projects', 'shared']) {
     await fs.mkdir(path.join(base, directory), { recursive: true });
     for (const file of await fs.readdir(path.join(root, 'apps/desktop/src', directory))) {
       if (!file.endsWith('.ts') || file.startsWith('register')) continue;
@@ -43,7 +43,7 @@ test('Persistent conversation history', async t => {
           if (mode === 'failed') throw new Error('secret protocol stderr');
           onText('answer', 'Completed answer'); return 'Completed answer';
         }, close: async () => {},
-      }), repository, 10000);
+      }), repository, { inspect: async () => true, ensure: async (value, _project, save) => { value.baseBranch = value.branchName; value.workBranch = 'flux/test'; value.worktreePath = path.join(base, 'mock-worktree'); value.worktreeStatus = 'ready'; value.worktreeCreatedAt = now; await save(); return value.worktreePath; } }, 10000);
     return { service, repository, calls, events, finish: value => finish(value), written: () => writesBeforeLaunch,
       send: (data = input) => service.start(1, data, event => events.push(event)),
       done: async () => until(() => events.some(event => ['completed', 'failed', 'cancelled'].includes(event.type))) };

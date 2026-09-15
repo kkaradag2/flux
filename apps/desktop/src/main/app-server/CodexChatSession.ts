@@ -148,7 +148,7 @@ export class CodexChatSession implements ChatSessionPort {
       }
       if (signal.aborted) throw new SmokeTestError('CANCELLED');
       const started = object(await wait(wire.request('turn/start', {
-        threadId: this.threadId, input: [{ type: 'text', text: prompt, text_elements: [] }],
+        cwd: options.cwd, threadId: this.threadId, input: [{ type: 'text', text: prompt, text_elements: [] }],
         approvalPolicy: 'never', sandboxPolicy: { type: 'readOnly', networkAccess: false },
         ...(options.runtime.reasoningEffort === 'default' ? {} : { effort: options.runtime.reasoningEffort }),
       })));

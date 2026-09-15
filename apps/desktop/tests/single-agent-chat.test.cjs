@@ -8,7 +8,7 @@ const ts = require('typescript');
 const root = path.resolve(__dirname, '../../..');
 const output = path.join(root, '.cache/single-agent-tests', String(Date.now()));
 test('Single-agent read-only chat', async t => {
-  for (const directory of ['main/app-server', 'main/chat', 'main/management', 'shared']) {
+  for (const directory of ['main/app-server', 'main/chat', 'main/management', 'main/projects', 'shared']) {
     const source = path.join(root, 'apps/desktop/src', directory);
     await fs.mkdir(path.join(output, directory), { recursive: true });
     for (const file of await fs.readdir(source)) {
@@ -69,7 +69,7 @@ test('Single-agent read-only chat', async t => {
     const snapshot = { activity: null, state: { operationalStatus: 'READY', verificationStatus: 'passed', installationId: 'selected', cliVersion: '0.154.0' } };
     const projects = { getProjects: async () => [{ id: 'flux', path: root }], getCurrentBranch: async () => changes.branch ?? 'main' };
     const records = new Map(); const repository = { save: async value => { records.set(value.id, structuredClone(value)); }, get: async id => { if (!records.has(id)) throw Error('missing'); return structuredClone(records.get(id)); }, list: async () => [...records.values()].map(v => structuredClone(v)) };
-    const instance = new SingleAgentRunService(projects, { getAgents: async () => changes.agents ?? agents }, { getTeam: async id => ({ id, agentIds: ['lead', 'developer'] }) }, { snapshot: () => changes.snapshot ?? snapshot }, () => { launches++; return (launches === 1 ? f : fixture(mode)).client.createChatSession(); }, repository, changes.timeout ?? 1000);
+    const instance = new SingleAgentRunService(projects, { getAgents: async () => changes.agents ?? agents }, { getTeam: async id => ({ id, agentIds: ['lead', 'developer'] }) }, { snapshot: () => changes.snapshot ?? snapshot }, () => { launches++; return (launches === 1 ? f : fixture(mode)).client.createChatSession(); }, repository, { inspect: async () => true, ensure: async (record, _project, save) => { if (changes.worktreeError) throw new (require(path.join(output, 'main/chat/ConversationWorktreeService')).WorktreeError)(changes.worktreeError); record.baseBranch = record.branchName; record.workBranch = 'flux/test'; record.worktreePath = path.join(root, '.cache/mock-worktree'); record.worktreeStatus = 'ready'; record.worktreeCreatedAt = new Date().toISOString(); await save(); return record.worktreePath; } }, changes.timeout ?? 1000);
     return { ...f, instance, events, launches: () => launches, send: (data = input) => instance.start(1, data, e => events.push(e)), finished: async () => until(() => events.some(e => ['completed', 'failed', 'cancelled'].includes(e.type))) };
   }
   await t.test('accepts only the four renderer fields, rejects injected execution settings and blank prompts', () => {
@@ -84,7 +84,7 @@ test('Single-agent read-only chat', async t => {
     assert.equal(f.events[0].agent.name, 'Lead'); assert.equal(f.events.at(-1).text, 'Hello from Lead.');
     assert.deepEqual(f.sent.filter(e => e.method).map(e => e.method), ['initialize', 'initialized', 'mcpServerStatus/list', 'thread/start', 'mcpServerStatus/list', 'turn/start']);
     const thread = f.sent.find(e => e.method === 'thread/start').params, turn = f.sent.find(e => e.method === 'turn/start').params;
-    assert.equal(thread.developerInstructions, options.instructions); assert.equal(thread.cwd, root); assert.equal(thread.ephemeral, false);
+    assert.equal(thread.developerInstructions, options.instructions); assert.equal(thread.cwd, path.join(root, '.cache/mock-worktree')); assert.equal(turn.cwd, thread.cwd); assert.equal(thread.ephemeral, false);
     assert.equal(thread.sandbox, 'read-only'); assert.equal(thread.approvalPolicy, 'never');
     assert.equal(thread.config['features.multi_agent'], false); assert.equal(thread.config['features.apps'], false); assert.equal(thread.config.web_search, 'disabled'); assert.deepEqual(thread.config.mcp_servers, {});
     assert.deepEqual(turn.sandboxPolicy, { type: 'readOnly', networkAccess: false }); assert.equal(turn.approvalPolicy, 'never');
@@ -119,14 +119,13 @@ test('Single-agent read-only chat', async t => {
     assert.equal(f.sent.find(e => e.method === 'turn/start').params.effort, 'high'); await session.close();
   });
   for (const [name, changes, code] of [
-    ['branch mismatch', { branch: 'another-branch' }, 'BRANCH_MISMATCH'],
-    ['detached HEAD', { branch: '' }, 'BRANCH_MISMATCH'],
+    ['missing base branch', { worktreeError: 'BASE_BRANCH_UNAVAILABLE' }, 'BASE_BRANCH_UNAVAILABLE'],
+    ['missing isolated tree', { worktreeError: 'WORKTREE_MISSING' }, 'WORKTREE_MISSING'],
     ['no enabled agent', { agents: [] }, 'AGENT_UNAVAILABLE'],
     ['runtime not ready', { snapshot: { activity: null, state: { operationalStatus: 'UNAVAILABLE' } } }, 'RUNTIME_NOT_READY'],
   ]) await t.test(name + ' blocks process launch safely', async () => {
     const f = service('success', changes); f.send(); await f.finished();
     assert.equal(f.events.at(-1).code, code); assert.equal(f.launches(), 0); assert.equal(f.sent.length, 0);
-    if (code === 'BRANCH_MISMATCH') assert.equal(f.events.at(-1).message, 'For now, choose the currently checked-out branch.');
     await f.wire.close(); await f.instance.shutdown();
   });
   await t.test('Stop interrupts actual turn; foreign window cannot cancel; no simultaneous turns', async () => {

@@ -8,7 +8,11 @@ export function ComposerContextBar() {
     <div className="composer-context-bar" aria-label="Task context" aria-busy={loading}>
       <ProjectSelector value={activeProject?.id ?? ''} displayValue={activeProject?.name ?? 'Select project'} options={projects.map(project => ({ value: project.id, label: project.name, description: project.path }))} disabled={loading || running || opening || !!conversation} onSelect={id => void selectProject(id)} action={{ label: 'Add project...', onSelect: () => void addProject() }} />
       <SelectorButton label="Environment" icon="terminal" value="Local" options={['Local']} />
-      <BranchSelector value={activeProject?.selectedBranch ?? ''} displayValue={activeProject?.selectedBranch || 'Select branch'} options={branches} disabled={loading || running || opening || !!conversation || !branches.length} onSelect={branch => void selectBranch(branch)} />
+      <div className="conversation-branch" title={conversation?.baseBranch ? `Based on ${conversation.baseBranch}` : undefined}>
+        <BranchSelector {...(conversation?.baseBranch ? { title: `Based on ${conversation.baseBranch}` } : {})} value={conversation?.workBranch ?? activeProject?.selectedBranch ?? ''} displayValue={conversation?.workBranch ?? (activeProject?.selectedBranch || 'Select branch')} options={branches} disabled={loading || running || opening || !!conversation || !branches.length} onSelect={branch => void selectBranch(branch)} />
+        {conversation?.worktreeStatus === 'ready' && <small className="isolation-label">Isolated</small>}
+        {conversation?.worktreeStatus === 'missing' && <small className="isolation-label">Worktree missing</small>}
+      </div>
     </div>
   );
 }

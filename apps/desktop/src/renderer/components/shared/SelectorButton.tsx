@@ -6,18 +6,19 @@ export interface SelectorOption { value: string; label: string; description?: st
 export interface SelectorProps {
   value: string;
   displayValue?: string;
+  title?: string;
   options?: readonly (string | SelectorOption)[];
   onSelect?: (value: string) => void;
   disabled?: boolean;
   action?: { label: string; onSelect: () => void };
 }
 interface SelectorButtonProps extends SelectorProps { label: string; icon: IconName; }
-export function SelectorButton({ value, displayValue = value, options = [value], label, icon, onSelect, disabled, action }: SelectorButtonProps) {
+export function SelectorButton({ value, displayValue = value, title, options = [value], label, icon, onSelect, disabled, action }: SelectorButtonProps) {
   const menu = usePopover();
   const id = useId();
   return (
     <div className={'selector-container' + (label === 'Project' ? ' project-selector' : '')} ref={menu.container} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) menu.close(); }}>
-      <button ref={menu.trigger} type="button" className="selector-button" onClick={() => menu.setOpen(!menu.open)} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); menu.setOpen(true); } }} disabled={disabled} aria-label={label + ': ' + displayValue} title={label + ': ' + displayValue} aria-haspopup="menu" aria-expanded={menu.open} aria-controls={id}>
+      <button ref={menu.trigger} type="button" className="selector-button" onClick={() => menu.setOpen(!menu.open)} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); menu.setOpen(true); } }} disabled={disabled} aria-label={label + ': ' + displayValue} title={title ?? label + ': ' + displayValue} aria-haspopup="menu" aria-expanded={menu.open} aria-controls={id}>
         <Icon name={icon} size={16} /><span className="truncate">{displayValue}</span><Icon name="chevron" size={13} />
       </button>
       {menu.open && <div className="selection-menu" id={id} role="menu" aria-label={label}>

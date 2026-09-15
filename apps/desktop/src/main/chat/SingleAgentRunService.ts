@@ -1,3 +1,4 @@
+import { WorktreeError, type ConversationWorktrees } from './ConversationWorktreeService';
 import { randomUUID } from 'node:crypto';
 import type { SingleAgentInput, SingleAgentEvent, RunIdentity } from '../../shared/single-agent-api';
 import type { ConversationSummary, OpenConversationResult } from '../../shared/conversation-api';
@@ -15,7 +16,6 @@ const messages = {
   BUSY: 'A turn is already running. Stop it before opening another conversation.',
   RUNTIME_NOT_READY: 'Codex is not ready to use. Open Settings to check the runtime.',
   PROJECT_UNAVAILABLE: 'This project is unavailable. Select it again before sending.',
-  BRANCH_MISMATCH: 'For now, choose the currently checked-out branch.',
   AGENT_UNAVAILABLE: 'This team has no enabled agent. Enable an agent in Agents first.',
   CONTEXT_CHANGED: 'This conversation belongs to a different project, branch or team. Open it from history or start a New task.',
   SESSION_ENDED: 'The Codex session ended. Open the conversation from history to continue.',
@@ -46,12 +46,13 @@ export class SingleAgentRunService {
   private resetting = new Set<number>();
   private stopped = false;
   constructor(
-    private projects: Pick<ProjectService, 'getProjects' | 'getCurrentBranch'>,
+    private projects: Pick<ProjectService, 'getProjects'>,
     private agents: Pick<AgentService, 'getAgents'>,
     private teams: Pick<TeamService, 'getTeam'>,
     private runtime: Pick<CodexRuntimeStateService, 'snapshot'>,
     private createSession: () => ChatSessionPort,
     private repository: ConversationStore,
+    private worktrees: ConversationWorktrees,
     private timeoutMs = 120000,
   ) {}
   async getConversations(): Promise<ConversationSummary[]> {
@@ -68,14 +69,16 @@ export class SingleAgentRunService {
       let record = this.active && current?.id === id ? current.record : await this.repository.get(id);
       if (!record) throw new SingleAgentError('CONVERSATION_UNAVAILABLE');
       const projectId = record.projectId;
-      if (!(await this.projects.getProjects()).some(project => project.id === projectId)) throw new SingleAgentError('PROJECT_UNAVAILABLE');
+      const project = (await this.projects.getProjects()).find(project => project.id === projectId);
+      if (!project) throw new SingleAgentError('PROJECT_UNAVAILABLE');
       if (!this.active) {
+        if (record.worktreeStatus === 'ready' && !await this.worktrees.inspect(record, project.path)) { record.worktreeStatus = 'missing'; await this.repository.save(record); }
         if (record.status === 'running') { record = markInterrupted(record); await this.repository.save(record); }
         await current?.session?.close();
         this.conversations.set(owner, { id, record, session: null });
       }
       return { conversation: conversationDetail(record), activeRun: this.active?.identity ?? null };
-    } catch (error) { throw error instanceof SingleAgentError ? error : new SingleAgentError('CONVERSATION_UNAVAILABLE'); }
+    } catch (error) { throw error instanceof SingleAgentError || error instanceof WorktreeError ? error : new SingleAgentError('CONVERSATION_UNAVAILABLE'); }
     finally { this.resetting.delete(owner); }
   }
   start(owner: number, value: unknown, emit: (event: SingleAgentEvent) => void): RunIdentity {
@@ -105,12 +108,9 @@ export class SingleAgentRunService {
       if (runtime.activity || runtime.state.operationalStatus !== 'READY' || runtime.state.verificationStatus !== 'passed') throw new SingleAgentError('RUNTIME_NOT_READY');
       const previous = context.record;
       if (previous && (previous.projectId !== input.projectId || previous.branchName !== input.branch || previous.teamId !== input.teamId)) throw new SingleAgentError('CONTEXT_CHANGED');
-      if (previous && !previous.codexThreadId) throw new SingleAgentError('THREAD_UNAVAILABLE');
+      if (previous && !previous.codexThreadId && previous.messages.some(message => message.role === 'agent' && message.content)) throw new SingleAgentError('THREAD_UNAVAILABLE');
       const project = (await this.projects.getProjects()).find(item => item.id === input.projectId);
       if (!project) throw new SingleAgentError('PROJECT_UNAVAILABLE');
-      let branch: string | null;
-      try { branch = await this.projects.getCurrentBranch(project.path); } catch { throw new SingleAgentError('PROJECT_UNAVAILABLE'); }
-      if (branch !== input.branch) throw new SingleAgentError('BRANCH_MISMATCH');
       const team = await this.teams.getTeam(input.teamId).catch(() => { throw new SingleAgentError('AGENT_UNAVAILABLE'); });
       const agents = previous ? [] : await this.agents.getAgents();
       const agent = previous?.agentDefinition ?? team.agentIds.map(id => agents.find(item => item.id === id)).find(item => item?.enabled);
@@ -135,10 +135,14 @@ export class SingleAgentRunService {
         checkpoint!.changed();
         try { await checkpoint!.flush(); } catch { storageFailed = true; throw new ConversationStorageError(); }
       };
+      const previousCwd = record.worktreePath;
+      const cwd = await this.worktrees.ensure(record, project.path, write);
+      if (previousCwd !== cwd && context.session) { await context.session.close(); context.session = null; }
+      if (controller.signal.aborted) throw new SmokeTestError('CANCELLED');
       context.session ??= this.createSession();
       emit({ ...identity, type: 'started', agent: record.agentSnapshot, conversation: conversationDetail(record) });
       const pieces = new Map<string, string>();
-      const text = await context.session.turn({ cwd: project.path, instructions: agent.instructionsMarkdown, runtime: agent.runtime,
+      const text = await context.session.turn({ cwd, instructions: agent.instructionsMarkdown, runtime: agent.runtime,
         threadId: record.codexThreadId, onThread: async id => { record.codexThreadId = id; await write(); } }, input.prompt, controller.signal,
         (itemId, text) => {
           if (controller.signal.aborted) return;
@@ -157,7 +161,7 @@ export class SingleAgentRunService {
     } catch (error) {
       if (turnSaved) { try { await context.session?.close(); } catch { /* Safe terminal result only. */ } context.session = null; }
       const cancelled = controller.signal.aborted && !timedOut && !storageFailed;
-      let safe = storageFailed || error instanceof ConversationStorageError ? new SingleAgentError('STORAGE_FAILED') : timedOut ? new SingleAgentError('TIMEOUT') : error instanceof ChatThreadUnavailableError ? new SingleAgentError('THREAD_UNAVAILABLE') : error instanceof SingleAgentError ? error : new SingleAgentError('RUN_FAILED');
+      let safe = storageFailed || error instanceof ConversationStorageError ? new SingleAgentError('STORAGE_FAILED') : timedOut ? new SingleAgentError('TIMEOUT') : error instanceof ChatThreadUnavailableError ? new SingleAgentError('THREAD_UNAVAILABLE') : error instanceof SingleAgentError || error instanceof WorktreeError ? error : new SingleAgentError('RUN_FAILED');
       if (turnSaved && context.record) {
         const record = context.record; record.status = cancelled ? 'cancelled' : 'failed'; record.updatedAt = new Date().toISOString();
         const answer = record.messages.find(message => message.id === agentMessageId); if (answer) answer.status = record.status;

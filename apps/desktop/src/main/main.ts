@@ -1,3 +1,4 @@
+import { ConversationWorktreeService } from './chat/ConversationWorktreeService';
 import { CodexAppServerClient } from './app-server/CodexAppServerClient';
 import { CodexSmokeTestService } from './app-server/CodexSmokeTestService';
 import { CodexRuntimeStateRepository } from './runtime/CodexRuntimeStateRepository';
@@ -30,6 +31,9 @@ declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
 const trustedWindowIds = new Set<number>();
 const initialProjectPath = 'C:\\WorkSpace\\AI\\Flux';
+
+// Worktrees always live outside the source checkout, including development.
+const worktreeDataPath = app.isPackaged ? app.getPath('userData') : path.join(app.getPath('appData'), 'Flux');
 
 // Keep development profiles and Chromium caches inside this repository.
 if (!app.isPackaged) {
@@ -109,7 +113,7 @@ app.whenReady().then(async () => {
   // A damaged history file must not prevent the rest of the app from opening.
   // Repository errors are surfaced by the history API without replacing the file.
   await conversations.recoverInterrupted().catch(() => undefined);
-  const chat = new SingleAgentRunService(projectService, agents, teams, runtime, () => chatClient.createChatSession(), conversations);
+  const chat = new SingleAgentRunService(projectService, agents, teams, runtime, () => chatClient.createChatSession(), conversations, new ConversationWorktreeService(path.join(worktreeDataPath, 'worktrees')));
   registerSingleAgentIpc(chat, trustedWindowIds);
   let cleanedUp = false;
   app.on('before-quit', event => {

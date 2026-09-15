@@ -10,7 +10,7 @@ const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encodi
 
 test('project authorization, local branches, persistence and read-only selection', async () => {
   await fs.mkdir(base, { recursive: true });
-  for (const name of ['ProjectError', 'project-path', 'GitRepositoryService', 'ProjectRepository', 'ProjectService']) {
+  for (const name of ['ProjectError', 'project-path', 'GitRepositoryService', 'GitCommandRunner', 'ProjectRepository', 'ProjectService']) {
     const source = await fs.readFile(path.join(root, 'apps/desktop/src/main/projects', name + '.ts'), 'utf8');
     const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } });
     await fs.writeFile(path.join(base, name + '.js'), output.outputText);

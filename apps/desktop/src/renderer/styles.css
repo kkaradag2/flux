@@ -450,3 +450,6 @@ svg { display: block; flex-shrink: 0; }
 .smoke-test-result--failed strong { color: #b43830; }
 .smoke-test-result p { margin: 10px 0; }
 .smoke-test-result small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 8px; }
+
+.conversation-branch { display: flex; align-items: center; min-width: 0; gap: 6px; }
+.isolation-label { font-size: 11px; color: var(--text-secondary); white-space: nowrap; }

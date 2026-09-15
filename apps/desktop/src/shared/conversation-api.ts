@@ -1,5 +1,6 @@
 import type { ApiResult } from './project-api';
 import type { ChatAgent, RunIdentity } from './single-agent-api';
+export type WorktreeStatus = 'creating' | 'ready' | 'failed' | 'missing';
 export type ConversationStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 export type ConversationMessage = {
   id: string; role: 'user' | 'agent' | 'system'; content: string; agentId: string | null;
@@ -7,6 +8,7 @@ export type ConversationMessage = {
 };
 export type ConversationSummary = {
   id: string; projectId: string; branchName: string; teamId: string; leadAgentId: string;
+  baseBranch?: string; workBranch?: string; worktreeStatus?: WorktreeStatus; worktreeCreatedAt?: string | null;
   title: string; status: ConversationStatus; interrupted: boolean; createdAt: string; updatedAt: string;
 };
 // Codex thread IDs and agent instructions intentionally stay in the main record.
