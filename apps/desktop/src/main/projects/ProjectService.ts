@@ -56,6 +56,8 @@ export class ProjectService {
     return this.repository.add({ id: randomUUID(), name, path: directory, selectedBranch, createdAt: now, lastOpenedAt: now });
   }
 
+  async getSelectedProjectId(): Promise<string | null> { await this.initialize(); return this.repository.getSelectedProjectId(); }
+
   async getProjects(): Promise<Project[]> {
     await this.initialize();
     return this.repository.list();

@@ -83,6 +83,7 @@ export class SingleAgentRunService {
     if (this.active || this.resetting.has(owner)) throw new SingleAgentError('BUSY');
     if (this.stopped) throw new SingleAgentError('SESSION_ENDED');
     const context = this.conversations.get(owner) ?? { id: randomUUID(), session: null, record: null };
+    if (context.record?.mode === 'team') throw new SingleAgentError('CONTEXT_CHANGED');
     this.conversations.set(owner, context);
     const identity = { conversationId: context.id, runId: randomUUID() };
     const controller = new AbortController();

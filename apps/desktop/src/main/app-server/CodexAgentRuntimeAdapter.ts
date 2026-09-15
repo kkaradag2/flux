@@ -50,6 +50,7 @@ export class CodexAgentRuntimeAdapter implements AgentRuntimeAdapter {
     onThread: async id => {
      if (!owned.has(id) && CodexAgentRuntimeAdapter.active.has(id)) throw new AgentRuntimeError('RUNTIME_SESSION_BUSY');
      owned.add(id); CodexAgentRuntimeAdapter.active.set(id, controller); threadId = id;
+     await request.onSession?.({ runtime: this.type, externalSessionId: id });
     },
    }, request.prompt, controller.signal, () => { /* Never publish raw output. */ });
    if (controller.signal.aborted) throw new AgentRuntimeError(timedOut ? 'RUNTIME_TIMEOUT' : 'RUNTIME_CANCELLED');

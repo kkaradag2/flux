@@ -1,3 +1,5 @@
+import { composeOrchestration } from './orchestration/composeOrchestration';
+import { developmentProfilePath, migrateDevelopmentProfile } from './persistence/developmentProfile';
 import { CodexAppServerClient } from './app-server/CodexAppServerClient';
 import { CodexSmokeTestService } from './app-server/CodexSmokeTestService';
 import { CodexRuntimeStateRepository } from './runtime/CodexRuntimeStateRepository';
@@ -15,7 +17,7 @@ import { JsonAgentRepository } from './management/JsonAgentRepository';
 import { JsonTeamRepository } from './management/JsonTeamRepository';
 import { AgentAssetService } from './management/AgentAssetService';
 import { registerManagementIpc } from './management/registerManagementIpc';
-import { app, BrowserWindow, Menu, nativeTheme, nativeImage } from 'electron';
+import { app, BrowserWindow, Menu, nativeTheme, nativeImage, ipcMain } from 'electron';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ProjectRepository } from './projects/ProjectRepository';
@@ -31,9 +33,10 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 const trustedWindowIds = new Set<number>();
 const initialProjectPath = 'C:\\WorkSpace\\AI\\Flux';
 
-// Keep development profiles and Chromium caches inside this repository.
+// Runtime records and Chromium caches belong to OS app data, never the project.
+const legacyDevelopmentProfile = path.resolve(__dirname, '../../../..', '.flux', 'desktop');
 if (!app.isPackaged) {
-  const dataPath = path.resolve(__dirname, '../../../..', '.flux', 'desktop');
+  const dataPath = developmentProfilePath(app.getPath('appData'));
   mkdirSync(dataPath, { recursive: true });
   app.setPath('userData', dataPath);
   app.setPath('sessionData', dataPath);
@@ -84,6 +87,7 @@ const createWindow = async (): Promise<void> => {
 };
 
 app.whenReady().then(async () => {
+  if (!app.isPackaged) await migrateDevelopmentProfile(legacyDevelopmentProfile, app.getPath('userData'));
   const projectService = new ProjectService(
     new ProjectRepository(path.join(app.getPath('userData'), 'projects.json')),
     new GitRepositoryService(),
@@ -111,11 +115,13 @@ app.whenReady().then(async () => {
   await conversations.recoverInterrupted().catch(() => undefined);
   const chat = new SingleAgentRunService(projectService, agents, teams, runtime, () => chatClient.createChatSession(), conversations);
   registerSingleAgentIpc(chat, trustedWindowIds);
+  const orchestration = await composeOrchestration({ app, ipc: ipcMain, trusted: trustedWindowIds, projects: projectService,
+    conversations, agents, teams, runtime, installations, projectRoot: initialProjectPath });
   let cleanedUp = false;
   app.on('before-quit', event => {
     if (cleanedUp) return;
     event.preventDefault();
-    void Promise.all([chat.shutdown(), runtime.shutdown()]).finally(() => { cleanedUp = true; app.quit(); });
+    void Promise.all([orchestration.shutdown(), chat.shutdown(), runtime.shutdown()]).finally(() => { cleanedUp = true; app.quit(); });
   });
   nativeTheme.themeSource = 'system';
   Menu.setApplicationMenu(null);

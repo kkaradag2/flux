@@ -13,6 +13,7 @@ export interface OrchestrationRepository {
   save(result: OrchestrationResult, expectedRevision: number): Promise<RehydratedOrchestration>;
   update(runId: string, transition: (state: OrchestrationState) => OrchestrationResult): Promise<RehydratedOrchestration>;
   getRun(runId: string): Promise<TeamRun>;
+  listAllRuns(): Promise<readonly TeamRun[]>;
   listRuns(conversationId: string): Promise<readonly TeamRun[]>;
   getActiveRun(conversationId: string): Promise<RehydratedOrchestration | null>;
   getCurrentPlan(runId: string): Promise<ExecutionPlan | null>;

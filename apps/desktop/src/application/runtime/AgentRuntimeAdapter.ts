@@ -5,6 +5,8 @@ export type RuntimeCapabilities = Readonly<{
 }>;
 export type RuntimeTurnRequest = Readonly<{
  instructions: string; prompt: string; settings: RuntimeModelSettings; cwd: string;
+ /** Awaited before model execution; callers can durably retain the session. */
+ onSession?: (session: AgentSessionReference) => Promise<void>;
  session?: AgentSessionReference; signal: AbortSignal;
  resultContract: 'organizer-decision';
  policy: Readonly<{ readOnly: true; network: false; tools: false }>;

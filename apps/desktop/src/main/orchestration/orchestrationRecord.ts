@@ -21,9 +21,14 @@ function date(value: unknown): string {
 }
 function nullable<T>(value: unknown, parse: (value: unknown) => T): T | null { return value === null ? null : parse(value); }
 function choice<T extends string>(value: unknown, values: readonly T[]): T { check(typeof value === 'string' && values.includes(value as T)); return value as T; }
+function session(value: unknown): NonNullable<TeamRun['organizerSession']> {
+  const data = object(value);
+  return { runtime: choice(data.runtime, ['codex', 'claude']), externalSessionId: recordId(data.externalSessionId) };
+}
 function run(value: unknown): TeamRun {
   const data = object(value);
   return { id: recordId(data.id), conversationId: recordId(data.conversationId), projectId: recordId(data.projectId), teamId: recordId(data.teamId), organizerAgentId: recordId(data.organizerAgentId), goal: recordId(data.goal),
+    organizerSession: nullable(data.organizerSession === undefined ? null : data.organizerSession, session),
     status: choice(data.status, runStatuses), createdAt: date(data.createdAt), updatedAt: date(data.updatedAt), completedAt: nullable(data.completedAt, date) };
 }
 function task(value: unknown): AgentTask {
@@ -40,6 +45,7 @@ function event(value: unknown): OrchestrationEvent {
   const data = object(value), type = recordId(data.type);
   const common = { id: recordId(data.id), runId: recordId(data.runId), occurredAt: date(data.occurredAt), actorAgentId: recordId(data.actorAgentId), agentId: recordId(data.agentId) };
   switch (type) {
+    case 'run.organizer_session_set': return { ...common, type, session: session(data.session) };
     case 'run.created': return { ...common, type, run: run(data.run) };
     case 'run.status_changed': return { ...common, type, from: choice(data.from, runStatuses), to: choice(data.to, runStatuses), reason: nullable(data.reason, text) };
     case 'run.completed': return { ...common, type, completedAt: date(data.completedAt) };
@@ -47,7 +53,7 @@ function event(value: unknown): OrchestrationEvent {
     case 'plan.created': return { ...common, type, plan: plan(data.plan) };
     case 'plan.revised': return { ...common, type, previousVersion: integer(data.previousVersion), plan: plan(data.plan) };
     case 'task.created': return { ...common, type, taskId: recordId(data.taskId), delegatorAgentId: recordId(data.delegatorAgentId), task: task(data.task) };
-    case 'task.assigned': return { ...common, type, taskId: recordId(data.taskId), previousAgentId: recordId(data.previousAgentId) };
+    case 'task.assigned': return { ...common, type, taskId: recordId(data.taskId), previousAgentId: nullable(data.previousAgentId, recordId) };
     case 'task.started': return { ...common, type, taskId: recordId(data.taskId), from: choice(data.from, ['ready']), status: choice(data.status, ['working']) };
     case 'task.dependencies_changed': return { ...common, type, taskId: recordId(data.taskId), from: choice(data.from, taskStatuses), status: choice(data.status, taskStatuses), dependsOn: array(data.dependsOn, recordId) };
     case 'task.ready': case 'task.blocked': case 'task.needs_review': case 'task.completed': case 'task.failed': case 'task.cancelled': {

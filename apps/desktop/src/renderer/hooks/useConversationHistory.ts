@@ -16,7 +16,8 @@ export function useConversationHistory() {
   useEffect(() => {
     alive.current = true; void refresh();
     const unsubscribe = window.flux.subscribeSingleAgentEvents(event => { if (event.type !== 'messageDelta') void refresh(); });
-    return () => { alive.current = false; unsubscribe(); };
+    const offPlanning = window.flux.subscribeToOrchestrationChanges(() => { void refresh(); });
+    return () => { alive.current = false; unsubscribe(); offPlanning(); };
   }, [refresh]);
   return { conversations, historyError, refreshHistory: refresh };
 }

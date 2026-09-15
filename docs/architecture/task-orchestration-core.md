@@ -137,7 +137,55 @@ Okumada schema version, model alanları, ilişkiler, ISO tarihler, event kimlikl
 
 `createOrchestrationRepository` konumu `app.getPath('userData')` üzerinden alır; host ayrıca kayıtlı proje ve worktree köklerini hariç tutulan konumlar olarak verir. Proje/worktree altındaki userData ve orchestration klasörünü başka yere yönlendiren symlink/junction reddedilir. Mevcut geliştirme profilinin repo içindeki `.flux/desktop` konumu bu kuralla uyumlu değildir: ileride host entegrasyonunda repo dışında userData kullanılmalıdır. Bu aşamada mevcut profil değiştirilmedi ve repository Electron başlangıcına/IPC'ye bağlanmadı.
 
-Gelecekte SQLite adapter'ı aynı repository sözleşmesini uygulayabilir; domain ve application transition akışı dosya formatına bağımlı değildir. Process'ler arası kilit, şema migration'ı, event arşivleme ve scheduler recovery bu aşamada yoktur. Bozuk kayıtlar sessizce atlanmaz; listeleme de typed hata döndürür.
+Gelecekte SQLite adapter'ı aynı repository sözleşmesini uygulayabilir; domain ve application transition akışı dosya formatına bağımlı değildir. Process'ler arası kilit, genel şema migration altyapısı, event arşivleme ve scheduler recovery bu aşamada yoktur. Bozuk kayıtlar sessizce atlanmaz; listeleme de typed hata döndürür.
+
+### Organizer planning application akışı
+
+`TeamPromptCoordinator`, `TeamPromptSource` üzerinden güvenilir proje, seçili proje kimliği, conversation, takım ve agent tanımlarını çözer. Çağıran yalnız kimlikler, prompt ve isteğe bağlı cancellation signal verir. Runtime ayarları ve çalışma dizini bu kayıtlardan gelir. En az iki farklı kayıtlı üye, üyeler arasından enabled Organizer, conversation/proje eşleşmesi ve runtime capability kontrolü model çağrısından önce yapılır. Executor/router runtime bağımsızdır; somut adapter veya protokol tipi application/domain'e girmez.
+
+Yeni run ve `run.created` önce `planning` olarak atomik kaydedilir. Runtime'ın await edilen `onSession` callback'i, model turn'ü başlamadan `run.set_organizer_session` domain command'iyle `AgentSessionReference` değerini kalıcılaştırır. Session değiştirilemez; aynı referansın tekrar bildirilmesi event üretmez. Disk formatı `schemaVersion: 1` olarak kalır: eksik `organizerSession` alanı hem run hem run-created snapshot'ında `null` hydrate edilir ve sonraki yazmada açıkça saklanır.
+
+- `respond`: Merkezi `run.respond` command'i plansız/tasksız run'ı tamamlar; `run.completed` üretir. Genel run transition tablosunun eski kuralları korunur.
+- `ask_user`: Run `waiting_input` olur. Mesaj ve sorular application result'ta döner; otomatik ikinci çağrı yapılmaz.
+- `create_plan`: Flux ID üreticisi model key'lerini kalıcı task ID'lerine dönüştürür. Merkezi `plan.initialize` command'i graph ve plan kurallarını doğrular; plan version 1, tasklar, ilk atamalar, root task readiness ve running status tek repository update içinde yazılır. Event sırası plan.created → task.created → task.assigned → task.ready → run.status_changed'dır. Önceden kalıcılaştırılan session aynı aggregate snapshot'ında korunur.
+
+`continueRun`, yalnız `waiting_input` ve kayıtlı session ile çalışır. Takım/Organizer/runtime uyumu yeniden doğrulanır; aynı referans executor'a aktarılır. Run planning'e geçer, ardından üç karar türünden biri uygulanır. Process içindeki coordinator örnekleri aynı run için ortak continuation kilidini kullanır; ikinci çağrı typed RUN_BUSY ile reddedilir. Kullanıcı cevabı event payload'ına veya loglara kopyalanmaz.
+
+Her yazma mevcut per-run repository kuyruğu ve atomik temp + sync + rename altyapısını kullanır. Başarısız plan yazması kısmi plan/task bırakmaz. Runtime hatasında güvenli sabit mesajlı failed/cancelled transition kaydedilir; session ve önceki event geçmişi korunur. Disk tamamen yazılamıyorsa önceki sağlam snapshot korunur ve PERSISTENCE_FAILED döner; bu durumda terminal status'un kaydedildiği iddia edilmez.
+
+Bu servis henüz Electron başlangıcı, UI veya IPC'ye bağlanmaz. `TeamPromptSource` host adapter'ı ve üretim clock/ID sağlayıcısı sonraki entegrasyonda bağlanacaktır. Plan revision, scheduler, worker çalıştırma ve kapanış sonrası yarım planning run recovery kapsam dışıdır. Mesaj/soru sonucu ayrıca persist edilmez; bu aşamada application result olarak döner.
+
+#### Planning flow doğrulaması ve değişen dosyalar
+
+Checkpoint: `16b88947310fe7c77541d468f932859f9b7df328`. `feature/task-orchestration-core` push edildi; `feature/organizer-planning-flow` aynı HEAD'den oluşturulup upstream ile push edildi. Aşağıdaki yeni geliştirme commit/push edilmedi.
+
+Focused komut:
+
+```text
+node --test apps/desktop/tests/team-prompt-coordinator.test.cjs apps/desktop/tests/orchestration-domain.test.cjs apps/desktop/tests/orchestration-persistence.test.cjs apps/desktop/tests/organizer-executor.test.cjs apps/desktop/tests/agent-runtime-router.test.cjs apps/desktop/tests/organizer-decision.test.cjs
+```
+
+Sonuç: üst testler dahil **125 başarılı, 0 başarısız**. `pnpm typecheck` ve `git diff --check` başarılı. Gerçek runtime çağrısı, Electron, build/package veya görsel test yapılmadı. Yeni testler fake executor/runtime ve izole, temizlenen persistence klasörlerini kullanır. Mevcut domain testindeki import sınırı yalnız runtime bağımsız `AgentSessionReference` type import'una izin verecek şekilde genişletildi; eski transition testleri korundu.
+
+Yeni dosyalar:
+
+- `apps/desktop/src/application/orchestration/TeamPromptCoordinator.ts`
+- `apps/desktop/src/application/orchestration/TeamPromptSource.ts`
+- `apps/desktop/src/application/orchestration/TeamPromptError.ts`
+- `apps/desktop/tests/team-prompt-coordinator.test.cjs`
+
+Güncellenen dosyalar:
+
+- `apps/desktop/src/application/orchestration/organizer/OrganizerDecisionExecutor.ts`
+- `apps/desktop/src/application/runtime/AgentRuntimeAdapter.ts`
+- `apps/desktop/src/domain/orchestration/models.ts`
+- `apps/desktop/src/domain/orchestration/events.ts`
+- `apps/desktop/src/domain/orchestration/Orchestration.ts`
+- `apps/desktop/src/main/app-server/CodexAgentRuntimeAdapter.ts`
+- `apps/desktop/src/main/orchestration/orchestrationRecord.ts`
+- `apps/desktop/tests/orchestration-domain.test.cjs`
+- `apps/desktop/tests/organizer-executor.test.cjs`
+- `docs/architecture/task-orchestration-core.md`
 
 ### Persistence doğrulaması ve dosyaları
 

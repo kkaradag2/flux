@@ -1,3 +1,4 @@
+import { createOrchestrationApi } from './orchestrationApi';
 import { runtimeStateChannels } from '../shared/runtime-state-channels';
 import { managementChannels as channels } from '../shared/management-channels';
 import { contextBridge, ipcRenderer } from 'electron';
@@ -8,6 +9,7 @@ import type { SingleAgentEvent } from '../shared/single-agent-api';
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<ApiResult<T>> => ipcRenderer.invoke(channel, ...args);
 const api: FluxApi = {
+ ...createOrchestrationApi(ipcRenderer),
  getConversations: () => invoke(singleAgentChannels.list),
  openConversation: id => invoke(singleAgentChannels.open, id),
  startSingleAgentTurn: input => invoke(singleAgentChannels.start, input),

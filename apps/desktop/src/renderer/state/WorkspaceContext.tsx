@@ -1,3 +1,5 @@
+import { useTeamPlanning } from '../hooks/useTeamPlanning';
+import type { ConversationOrchestrationView } from '../../shared/orchestration-api';
 import { useTeamManagement } from './ManagementContext';
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useProjectWorkspace } from '../hooks/useProjectWorkspace';
@@ -7,6 +9,7 @@ import type { ConversationDetail, ConversationSummary } from '../../shared/conve
 
 export interface WorkspaceSelections { project: string; environment: string; branch: string; }
 interface WorkspaceState extends ReturnType<typeof useProjectWorkspace> {
+  orchestration: ConversationOrchestrationView | null;
   messages: readonly ChatMessage[];
   running: boolean;
   workingAgentId: string | null;
@@ -28,33 +31,38 @@ interface WorkspaceState extends ReturnType<typeof useProjectWorkspace> {
 const WorkspaceContext = createContext<WorkspaceState | null>(null);
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const chat = useSingleAgentChat();
+  const planning = useTeamPlanning();
+  const conversation = planning.conversation ?? chat.conversation;
+  const isTeam = conversation?.mode === 'team';
   const history = useConversationHistory();
   const [taskKey, setTaskKey] = useState(0);
   const projectWorkspace = useProjectWorkspace();
   const { teams } = useTeamManagement();
   const [teamId, setTeamId] = useState<string | null>(null);
-  const selectedTeamId = chat.conversation?.teamId ?? (teams.some(team => team.id === teamId) ? teamId : teams.find(team => team.id === 'core-team')?.id ?? teams[0]?.id ?? null);
+  const selectedTeamId = conversation?.teamId ?? (teams.some(team => team.id === teamId) ? teamId : teams.find(team => team.id === 'core-team')?.id ?? teams[0]?.id ?? null);
   const selectTeam = useCallback((id: string) => { if (teams.some(team => team.id === id)) setTeamId(id); }, [teams]);
   const selections: WorkspaceSelections = { project: projectWorkspace.activeProject?.name ?? 'your project', environment: 'Local', branch: projectWorkspace.activeProject?.selectedBranch ?? '' };
-  const newTask = useCallback(() => { chat.reset(); setTaskKey(key => key + 1); }, [chat.reset]);
+  const newTask = useCallback(() => { planning.reset(); chat.reset(); setTaskKey(key => key + 1); }, [chat.reset, planning.reset]);
   const sendMessage = useCallback((text: string) => {
     if (!projectWorkspace.activeProject || !selectedTeamId || projectWorkspace.loading || chat.opening) return false;
-    return chat.send({ projectId: projectWorkspace.activeProject.id, branch: projectWorkspace.activeProject.selectedBranch, teamId: selectedTeamId, prompt: text });
-  }, [chat.send, chat.opening, projectWorkspace.activeProject, projectWorkspace.loading, selectedTeamId]);
+    const send = !conversation || isTeam ? planning.send : chat.send;
+    return send({ projectId: projectWorkspace.activeProject.id, branch: projectWorkspace.activeProject.selectedBranch, teamId: selectedTeamId, prompt: text });
+  }, [chat.send, planning.send, conversation, isTeam, chat.opening, projectWorkspace.activeProject, projectWorkspace.loading, selectedTeamId]);
   const openConversation = useCallback(async (id: string): Promise<boolean> => {
     const opened = await chat.openConversation(id, async (detail, isCurrent) => {
       const activated = await projectWorkspace.activateConversation(detail.projectId, detail.branchName, isCurrent);
-      if (activated) setTeamId(detail.teamId);
+      if (activated) { setTeamId(detail.teamId); if (detail.mode === 'team') await planning.open(detail); else planning.reset(); }
       return activated;
     });
     if (opened) { setTaskKey(key => key + 1); void history.refreshHistory(); }
     return opened;
-  }, [chat.openConversation, projectWorkspace.activateConversation, history.refreshHistory]);
+  }, [chat.openConversation, planning.open, planning.reset, projectWorkspace.activateConversation, history.refreshHistory]);
   const selectProject = useCallback(async (id: string): Promise<void> => {
     if (chat.running || chat.opening) return;
     newTask(); await projectWorkspace.selectProject(id);
   }, [chat.running, chat.opening, newTask, projectWorkspace.selectProject]);
-  const value = useMemo(() => ({ ...projectWorkspace, ...chat, ...history, taskKey, selections, newTask, sendMessage, selectedTeamId, selectTeam, openConversation, selectProject }), [projectWorkspace, chat, history, taskKey, selections, newTask, sendMessage, selectedTeamId, selectTeam, openConversation, selectProject]);
+  const value = useMemo(() => ({ ...projectWorkspace, ...chat, ...history, conversation, orchestration: isTeam ? planning.view : null,
+    ...(isTeam ? { messages: planning.messages, running: planning.running, workingAgentId: planning.workingAgentId, stop: planning.stop, conversationError: planning.error } : {}), taskKey, selections, newTask, sendMessage, selectedTeamId, selectTeam, openConversation, selectProject }), [projectWorkspace, chat, planning, conversation, isTeam, history, taskKey, selections, newTask, sendMessage, selectedTeamId, selectTeam, openConversation, selectProject]);
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }
 export function useWorkspace() {

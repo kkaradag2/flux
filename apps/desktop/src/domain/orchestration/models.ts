@@ -1,3 +1,4 @@
+import type { AgentSessionReference } from '../../shared/agent-runtime';
 export type TeamRunStatus = 'planning' | 'running' | 'waiting_input' | 'completed' | 'failed' | 'cancelled';
 export type AgentTaskStatus = 'planned' | 'ready' | 'working' | 'blocked' | 'needs_review' | 'completed' | 'failed' | 'cancelled';
 
@@ -7,6 +8,7 @@ export type TeamRun = Readonly<{
   projectId: string;
   teamId: string;
   organizerAgentId: string;
+  organizerSession: AgentSessionReference | null;
   goal: string;
   status: TeamRunStatus;
   createdAt: string;
@@ -56,6 +58,10 @@ export type AgentTaskInput = Pick<AgentTask, 'id' | 'title' | 'description' | 'a
 export type OrchestrationDecision = Readonly<{ id: string; agentId: string; occurredAt: string }>;
 
 export type OrchestrationCommand =
+  | Readonly<{ type: 'run.respond' }>
+  | Readonly<{ type: 'run.resume_planning' }>
+  | Readonly<{ type: 'run.set_organizer_session'; session: AgentSessionReference }>
+  | Readonly<{ type: 'plan.initialize'; id: string; summary: string; tasks: readonly AgentTaskInput[] }>
   | Readonly<{ type: 'tasks.create'; tasks: readonly AgentTaskInput[] }>
   | Readonly<{ type: 'task.assign'; taskId: string; assigneeAgentId: string }>
   | Readonly<{ type: 'task.set_dependencies'; taskId: string; dependsOn: readonly string[] }>

@@ -3,9 +3,11 @@ import type { ChatAgent, RunIdentity } from './single-agent-api';
 export type ConversationStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 export type ConversationMessage = {
   id: string; role: 'user' | 'agent' | 'system'; content: string; agentId: string | null;
+  planRunId?: string;
   createdAt: string; status: 'streaming' | 'completed' | 'failed' | 'cancelled';
 };
 export type ConversationSummary = {
+  mode?: 'single-agent' | 'team';
   id: string; projectId: string; branchName: string; teamId: string; leadAgentId: string;
   title: string; status: ConversationStatus; interrupted: boolean; createdAt: string; updatedAt: string;
 };

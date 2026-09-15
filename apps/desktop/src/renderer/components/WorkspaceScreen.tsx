@@ -7,12 +7,13 @@ import { AppSidebar } from './sidebar/AppSidebar';
 import { ChatWorkspace } from './chat/ChatWorkspace';
 import { useWorkspacePanel } from '../hooks/useWorkspacePanel';
 import { WorkspaceRightPanel } from './panel/WorkspaceRightPanel';
-import type { WorkspaceTaskItem } from './tasks/workspaceTask';
 import { TeamPanel } from './team/TeamPanel';
 import { WorkspaceLayout } from './WorkspaceLayout';
 import { ManagementArea } from './management/ManagementArea';
-const workspaceTasks: readonly WorkspaceTaskItem[] = []; // No task source is connected yet.
+
 export function WorkspaceScreen() {
+ const { orchestration } = useWorkspace();
+ const workspaceTasks = orchestration?.tasks ?? [];
  const panel = useWorkspacePanel(workspaceTasks.length);
  const sidebar = useSidebar(); const { route, navigate } = useNavigation(); const workspace = route.view === 'workspace';
  const { newTask, projects, activeProject, loading, selectProject, running, opening, conversations, conversation, openConversation } = useWorkspace();
