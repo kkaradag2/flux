@@ -12,7 +12,7 @@ export class CodexRuntimeProbe {
       if (versionResult.timedOut) return result('error', 'Codex version check timed out after 5 seconds.');
       if (versionResult.failed || versionResult.exitCode !== 0) return result('error', 'Codex CLI version could not be checked.');
       // Only a strict version token is allowed to cross the process boundary.
-      const match = /^codex-cli\s+(\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[a-z]+\.\d{1,6})?)\s*$/m.exec(versionResult.stdout);
+      const match = /^codex-cli\s+(\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[a-z]+(?:\.\d{1,6}){1,4})?)\s*$/m.exec(versionResult.stdout);
       if (!match?.[1]) return result('error', 'Codex CLI returned an unrecognized version.');
       version = match[1];
       const auth = await this.runner.run(executable, 'login-status', 10000);

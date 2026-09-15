@@ -1,7 +1,14 @@
+import { CodexAppServerClient } from './app-server/CodexAppServerClient';
+import { CodexSmokeTestService } from './app-server/CodexSmokeTestService';
+import { CodexRuntimeStateRepository } from './runtime/CodexRuntimeStateRepository';
+import { CodexInstallationRepository } from './runtime/CodexInstallationRepository';
+import { CodexInstallationService } from './runtime/CodexInstallationService';
+import { CodexRuntimeStateService } from './runtime/CodexRuntimeStateService';
+import { CodexUpdateService } from './runtime/CodexUpdateService';
+import { registerRuntimeStateIpc } from './runtime/registerRuntimeStateIpc';
 import { RuntimeCommandRunner } from './runtime/RuntimeCommandRunner';
 import { CodexRuntimeProbe } from './runtime/CodexRuntimeProbe';
 import { RuntimeHealthService } from './runtime/RuntimeHealthService';
-import { registerRuntimeHealthIpc } from './runtime/registerRuntimeHealthIpc';
 import { AgentService } from './management/AgentService';
 import { TeamService } from './management/TeamService';
 import { JsonAgentRepository } from './management/JsonAgentRepository';
@@ -80,7 +87,16 @@ app.whenReady().then(async () => {
     initialProjectPath,
   );
   registerProjectIpc(projectService, trustedWindowIds, initialProjectPath);
-  registerRuntimeHealthIpc(new RuntimeHealthService(new CodexRuntimeProbe(new RuntimeCommandRunner())), trustedWindowIds);
+  const installations = new CodexInstallationService(new CodexInstallationRepository(path.join(app.getPath('userData'), 'codex-installation.json')), new RuntimeCommandRunner());
+  const runtimeRunner = new RuntimeCommandRunner(() => installations.resolve());
+  const health = new RuntimeHealthService(new CodexRuntimeProbe(runtimeRunner));
+  const smokeTest = new CodexSmokeTestService(CodexAppServerClient.using(runtimeRunner), initialProjectPath);
+  const runtime = new CodexRuntimeStateService(new CodexRuntimeStateRepository(path.join(app.getPath('userData'), 'codex-runtime-state.json')), health, smokeTest, new CodexUpdateService(runtimeRunner, installations), installations);
+  registerRuntimeStateIpc(runtime, trustedWindowIds);
+  void runtime.inspect();
+  app.on('before-quit', event => {
+    if (runtime.running) { event.preventDefault(); void runtime.shutdown().finally(() => app.quit()); }
+  });
   const assets = new AgentAssetService(path.join(app.getPath('userData'), 'agent-avatars'), data => {
     const image = nativeImage.createFromBuffer(data); const size = image.getSize();
     return !image.isEmpty() && size.width <= 4096 && size.height <= 4096;

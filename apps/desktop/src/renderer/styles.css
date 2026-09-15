@@ -396,8 +396,29 @@ svg { display: block; flex-shrink: 0; }
 .runtime-status--ready { color: #267044; }
 .runtime-status--not-installed, .runtime-status--not-authenticated { color: #a85b17; }
 .runtime-status--error { color: #b43830; }
+.runtime-status--warning { color: #a85b17; }
+.runtime-guidance { margin-top: 12px; max-width: 680px; }
+.runtime-health[aria-busy="false"] > header + .runtime-message { margin-top: 20px; }
+.installation-dialog { width: min(560px, calc(100vw - 32px)); }
+.installation-candidates { margin: 0 0 24px; padding: 0; border: 0; max-height: 45vh; overflow-y: auto; }
+.installation-option { display: flex; align-items: flex-start; gap: 12px; padding: 14px 10px; border-bottom: 1px solid var(--border-subtle); cursor: pointer; }
+.installation-option:has(input:checked) { background: var(--surface-selected); }
+.installation-option input { margin-top: 4px; accent-color: var(--text-primary); }
+.installation-option > span { min-width: 0; flex: 1; }
+.installation-option strong { font-size: 13px; font-weight: 500; }
+.installation-option small { display: block; margin-top: 5px; color: var(--text-secondary); font-size: 11px; }
+.installation-path { display: block; margin-top: 8px; font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.installation-badges { display: flex; gap: 14px; flex-wrap: wrap; }
 .runtime-health dl { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 18px; margin: 24px 0 18px; }
 .runtime-health dt { font-size: 11px; color: var(--text-muted); margin-bottom: 7px; }
 .runtime-health dd { font-size: 13px; margin: 0; overflow-wrap: anywhere; }
 .runtime-message { margin: 0; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
 @media (max-width: 760px) { .settings-screen { padding: 24px 18px; }.runtime-health dl { grid-template-columns: 1fr; } }
+
+.runtime-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.smoke-test-result { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-subtle); font-size: 13px; }
+.smoke-test-result strong { font-weight: 500; }
+.smoke-test-result--passed strong { color: #267044; }
+.smoke-test-result--failed strong { color: #b43830; }
+.smoke-test-result p { margin: 10px 0; }
+.smoke-test-result small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 8px; }

@@ -78,4 +78,34 @@ Doğrulama komutları: `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm packag
 
 Settings → Runtimes ekranı Codex CLI kurulum, sürüm ve authentication durumunu gösterir. RuntimeCommandRunner yalnızca PATH üzerindeki adlandırılmış executable adaylarını kontrol eder. Version için 5 saniye, login status için 10 saniye sınırı kullanılır. Windows .cmd adapter'ı sabit argümanlarla ve shell:false ile çalışır; timeout'ta taskkill /t /f alt süreçleri de durdurur. macOS/Linux tarafında executable doğrudan çalıştırılır ve timeout'ta süreç grubu sonlandırılır.
 
-CodexRuntimeProbe yalnızca doğrulanmış sürüm ve sabit ChatGPT/API key etiketlerini döndürür. Ham stdout/stderr, executable yolu ve credential içeriği renderer'a gönderilmez veya dosyaya yazılmaz. Auth dosyaları uygulama tarafından açılmaz. RuntimeHealthService eşzamanlı çağrıları birleştirir ve son sonucu bellekte tutar; Refresh yeni kontrol başlatır. Health sorumluluğu agent/workspace state'inden ayrıdır. Prompt/agent çalıştırma, install/login/logout işlemi eklenmemiştir.
+CodexRuntimeProbe yalnızca doğrulanmış sürüm ve sabit ChatGPT/API key etiketlerini döndürür. Ham stdout/stderr, executable yolu ve credential içeriği renderer'a gönderilmez veya dosyaya yazılmaz. Auth dosyaları uygulama tarafından açılmaz. RuntimeHealthService eşzamanlı çağrıları birleştirir ve son sonucu bellekte tutar. Kullanıcıya gösterilen birleşik durum Phase 1B servisi tarafından yönetilir. Health sorumluluğu agent/workspace state'inden ayrıdır. Genel prompt/agent çalıştırma veya login/logout işlemi eklenmemiştir.
+
+## Phase 1A — App Server connection test
+
+Phase 1A'da eklenen ve Phase 1B'de otomatik kontrole dönüştürülen doğrulama, main process içinde varsayılan stdio/JSONL transport ile yalnızca sabit hello çağrısı yapar. `initialize` yanıtından sonra `initialized`, `thread/start`, `turn/start` sırası kullanılır. 0.151.0 generate-ts çıktısı `.cache/app-server-schema` altında incelenmiştir; repoya yalnızca kullanılan küçük contract ve runtime guard'lar eklenmiştir.
+
+Thread ephemeral, approval policy never, sandbox read-only; turn sandbox readOnly/networkAccess:false olarak gönderilir. Model/effort override edilmez. Test cwd'si Flux reposudur; workspace seçili proje/agent/team/instructions kullanılmaz. Başarı yalnızca tam `Hello from Flux.` final cevabı için döner. Başarısız yanıtta response null olur; ham hata/stdout/stderr UI'a gitmez.
+
+Windows executable/shim güvenliği ve process-tree sonlandırması mevcut RuntimeCommandRunner/WindowsShimAdapter üzerinden paylaşılır. Testte 43 saniye çalışma + en fazla 2 saniye cleanup bütçesi vardır. Eşzamanlı istekler bir promise paylaşır; pencere kapatma/uygulama çıkışı testi iptal edip temizliği bekler. Beklenmedik approval otomatik decline, tool isteği reddedilir. App Server protokolü renderer'a açılmaz. Yeni bağımlılık yoktur.
+
+Kurulu Codex 0.151.0 ile ilk canlı doğrulamada varsayılan gpt-6-astra modeli daha yeni Codex gerektirdiğini bildirerek turn'ü reddetti. Bu ortamda gerçek hello başarısı henüz doğrulanamadı; CLI/model ayarı otomatik değiştirilmedi.
+
+## Phase 1B — Kalıcı Codex durumu
+
+Settings artık tek operasyonel durum gösterir; CLI kurulu ve authenticated olması tek başına Ready anlamına gelmez. Başlangıçta hafif kontrol yapılır; aynı sürüm/auth için kayıtlı başarılı veya başarısız doğrulama yeniden kullanılır. İlk veya geçersizleşmiş doğrulama otomatik sabit hello çağrısı yapar. Settings geçişleri yeniden model çağırmaz. Hata durumundaki Check again / Try again bilinçli olarak yeni doğrulama başlatır. Refresh ve Run test kontrolleri kaldırılmıştır.
+
+`CodexRuntimeStateRepository`, `userData/codex-runtime-state.json` dosyasını atomik olarak yazar. Geliştirme profili `.flux/desktop` altında kalır. Dosyada yalnızca sürüm, güvenli auth yöntemi etiketi, typed operasyonel/doğrulama sonucu, tarihler ve güvenli güncelleme sorun kodu tutulur. Ham çıktılar, executable yolları, token veya credential saklanmaz. Bozuk JSON korunur ve kontrollü hata gösterilir.
+
+Yalnızca açık `CLI_TOO_OLD` sonucu Update required üretir. Update Codex onayı sonrası updater PATH adaylarını ve npm global kurulum eşleşmesini kontrol eder. Tek doğrulanmış kurulum varsa sabit `npm install -g @openai/codex@latest` çalışır; shell:false ve ortak Windows shim güvenliği korunur. Güncelleme süresi en fazla 180 saniyedir; iptal/timeout süreç ağacını temizler. Başarılı güncelleme health cache ve doğrulamayı geçersizleştirir; yeni sürüm/auth okunur ve otomatik hello doğrulaması yapılır. Sürüm aynı kalırsa Ready gösterilmez.
+
+Bu bilgisayarda npm global ve Codex desktop executable'ı birlikte PATH üzerindedir. Bu nedenle gerçek Update onayı **MULTIPLE_INSTALLATIONS** ile komut çalıştırmadan durduruldu; sürüm 0.151.0 kaldı. Gerçek güncelleme ve sonrasında gerçek Ready sonucu henüz doğrulanamadı. Kurulum yöntemi belirsizse veya birden fazla kurulum varsa otomasyon devre dışıdır; kullanıcı güvenli manuel yönlendirme görür. Model/effort, auth ve config değiştirilmez. Ayrıntılar: `docs/verification/codex-runtime-state.md`.
+
+## Phase 1C — Codex kurulum seçimi
+
+Phase 1B'nin çoklu kurulum engeli artık `Setup required → Choose installation` akışıyla çözülür. Aday listesi main process içinde oluşturulur; UI yalnız candidate ID gönderir ve hiçbir radio varsayılan seçili değildir. Gerçek executable yolları sadece yerel seçim ekranına ve özel app data seçim kaydına açılır; normal runtime snapshot, log ve raporlar yolu içermez.
+
+`CodexInstallationRepository`, seçimi `userData/codex-installation.json` içinde tutar. Ortak resolver version, authentication, App Server ve protocol schema kontrolü için aynı seçilmiş executable'ı kullanır. Sürüm veya kurulum kimliği değişirse önceki model doğrulaması geçersizleşir. Seçilen dosya kaybolur/geçersizleşirse başka PATH adayına dönülmez; yeniden açık seçim gerekir. Tek doğrulanmış aday varsa seçim ekranı gerekmez.
+
+Seçilen npm kurulumu için owning prefix/package ilişkisi doğrulanır. Npm'in JS entry point'i Node ile doğrudan başlatılır; sabit `@openai/codex@latest` paketi ve doğrulanmış `--prefix` ayrı argv öğeleridir. Shell command string oluşturulmaz. Standalone veya doğrulanamayan kurulumlar otomatik güncellenmez. PATH ve diğer kurulumlar değiştirilmez. Başarılı güncelleme sonrası aynı executable yeniden doğrulanır; gerçek hello başarısı olmadan Ready gösterilmez.
+
+77 otomatik test mevcut 61 testi içerir. Canlı ortamda npm `0.151.0` ve standalone `0.154.0-alpha.6.2` adayları görüntülendi; açık kullanıcı seçimi bekleniyor. Gerçek seçili npm güncellemesi ve sonrasında hello sonucu henüz doğrulanmadı. Ayrıntılar: `docs/verification/codex-installation-selection.md`.

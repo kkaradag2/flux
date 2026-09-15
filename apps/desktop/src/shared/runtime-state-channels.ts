@@ -1,0 +1,1 @@
+export const runtimeStateChannels = { get: 'flux:codex-state:get', inspect: 'flux:codex-state:inspect', retry: 'flux:codex-state:retry', update: 'flux:codex-state:update', candidates: 'flux:codex-state:candidates', select: 'flux:codex-state:select' } as const;

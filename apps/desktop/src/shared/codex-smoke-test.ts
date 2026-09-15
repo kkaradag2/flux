@@ -1,0 +1,2 @@
+export type SmokeTestErrorCode = 'NOT_INSTALLED' | 'START_FAILED' | 'PROTOCOL_ERROR' | 'PROCESS_EXIT' | 'TIMEOUT' | 'CANCELLED' | 'TURN_FAILED' | 'APPROVAL_REQUESTED' | 'TOOL_REQUESTED' | 'UNEXPECTED_RESPONSE' | 'CLEANUP_FAILED' | 'RUNTIME_INCOMPATIBLE';
+export type CodexSmokeTestResult = { status: 'passed' | 'failed'; response: string | null; durationMs: number; checkedAt: string; errorCode: SmokeTestErrorCode | null; message: string; verificationReason: import('./codex-runtime-state').VerificationReason | null };
