@@ -1,0 +1,4 @@
+# Desktop uygulaması ve gelecekteki ortak paketler.
+packages:
+  - 'apps/*'
+  - 'packages/*'
