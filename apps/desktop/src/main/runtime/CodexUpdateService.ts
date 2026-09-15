@@ -3,24 +3,24 @@ import { readFile, realpath } from 'node:fs/promises';
 import type { RuntimeCommandRunner } from './RuntimeCommandRunner';
 import type { UpdateProblem } from '../../shared/codex-runtime-state';
 import type { NpmUpdateTarget } from './NpmInstallationInspector';
-export interface CodexUpdater { update(): Promise<UpdateProblem>; shutdown(): Promise<void> }
+export interface CodexUpdater { update(onInstalling?: () => void): Promise<UpdateProblem>; shutdown(): Promise<void> }
 export class CodexUpdateService implements CodexUpdater {
   private cancel: (() => void) | null = null;
   private pending: Promise<UpdateProblem> | null = null;
   private stopped = false;
   constructor(private runner: RuntimeCommandRunner, private selectedInstallation?: { updateTarget(): Promise<NpmUpdateTarget | null> }) {}
-  update(): Promise<UpdateProblem> {
+  update(onInstalling?: () => void): Promise<UpdateProblem> {
     if (this.pending) return this.pending;
-    this.pending = this.perform().catch((): UpdateProblem => 'UNKNOWN_INSTALLATION').finally(() => { this.pending = null; });
+    this.pending = this.perform(onInstalling).catch((): UpdateProblem => 'UNKNOWN_INSTALLATION').finally(() => { this.pending = null; });
     return this.pending;
   }
   async shutdown(): Promise<void> { this.stopped = true; this.cancel?.(); await this.pending; }
-  private async perform(): Promise<UpdateProblem> {
+  private async perform(onInstalling?: () => void): Promise<UpdateProblem> {
     if (this.selectedInstallation) {
       const target = await this.selectedInstallation.updateTarget();
       if (!target) return 'UNKNOWN_INSTALLATION';
       if (this.stopped) return 'UPDATE_FAILED';
-      return this.install(target).catch((): UpdateProblem => 'UPDATE_FAILED');
+      return this.install(target, onInstalling).catch((): UpdateProblem => 'UPDATE_FAILED');
     }
     const codex = await this.runner.resolveAll('codex');
     if (codex.length > 1) return 'MULTIPLE_INSTALLATIONS';
@@ -49,9 +49,9 @@ export class CodexUpdateService implements CodexUpdater {
     const current = await this.runner.resolveAll('codex');
     if (current.length !== 1 || current[0] !== codex[0]) return 'MULTIPLE_INSTALLATIONS';
     if (this.stopped) return 'UPDATE_FAILED';
-    return this.install(executable);
+    return this.install(executable, onInstalling);
   }
-  private install(executable: string | NpmUpdateTarget): Promise<UpdateProblem> {
+  private install(executable: string | NpmUpdateTarget, onInstalling?: () => void): Promise<UpdateProblem> {
     return new Promise(resolve => {
       const child = typeof executable === 'string' ? this.runner.start(executable, 'npm-update') : this.runner.startNpmUpdate(executable);
       let finished = false, stopping = false;
@@ -68,6 +68,8 @@ export class CodexUpdateService implements CodexUpdater {
       const timer = setTimeout(stop, 180000); this.cancel = stop;
       child.stdout.on('data', discard); child.stderr.on('data', discard); child.stdin.on('error', failed);
       child.once('error', failed); child.once('close', closed); child.stdin.end();
+      // Feedback is observational; it must never affect process handling.
+      try { onInstalling?.(); } catch { /* Ignore observer errors. */ }
     });
   }
 }

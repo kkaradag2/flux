@@ -397,6 +397,15 @@ svg { display: block; flex-shrink: 0; }
 .runtime-status--not-installed, .runtime-status--not-authenticated { color: #a85b17; }
 .runtime-status--error { color: #b43830; }
 .runtime-status--warning { color: #a85b17; }
+.runtime-status > .runtime-update-spinner { width: 11px; height: 11px; box-sizing: border-box; background: transparent; border: 1.5px solid var(--border-composer); border-top-color: var(--text-secondary); animation: runtime-spin 1s linear infinite; }
+.codex-update-progress { max-width: 560px; }
+.update-progress-detail { color: var(--text-muted); margin-top: 3px; }
+.update-progress-track { height: 3px; margin-top: 14px; overflow: hidden; background: var(--border-subtle); border-radius: 2px; }
+.update-progress-track > span { display: block; height: 100%; width: 32%; background: var(--text-secondary); animation: runtime-progress 1.8s ease-in-out infinite; }
+.update-progress-elapsed { display: block; margin-top: 8px; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+@keyframes runtime-spin { to { transform: rotate(360deg); } }
+@keyframes runtime-progress { from { transform: translateX(-110%); } to { transform: translateX(420%); } }
+@media (prefers-reduced-motion: reduce) { .runtime-status > .runtime-update-spinner, .update-progress-track > span { animation: none; } }
 .runtime-guidance { margin-top: 12px; max-width: 680px; }
 .runtime-health[aria-busy="false"] > header + .runtime-message { margin-top: 20px; }
 .installation-dialog { width: min(560px, calc(100vw - 32px)); }

@@ -28,12 +28,13 @@ export function runtimePresentation(snapshot: CodexRuntimeSnapshot) {
     label: updating ? 'Updating' : labels[status],
     tone: status === 'READY' ? 'ready' : status === 'CHECKING' ? 'checking' : status === 'VERIFICATION_FAILED' ? 'error' : 'warning',
     busy, updating,
-    canUpdate: updating || state.operationalStatus === 'UPDATE_REQUIRED' && state.verificationReason === 'CLI_TOO_OLD' && !cannotUpdate,
+    canUpdate: !updating && state.operationalStatus === 'UPDATE_REQUIRED' && state.verificationReason === 'CLI_TOO_OLD' && !cannotUpdate,
+    showUpdateProgress: updating && snapshot.updateProgress?.stage !== 'COMPLETED',
     canChoose: selection || cannotUpdate,
     chooseLabel: selection ? 'Choose installation' : 'Choose another installation',
     retryLabel: state.operationalStatus === 'VERIFICATION_FAILED' ? 'Try again' : 'Check again',
     canRetry: !['READY', 'CHECKING', 'INSTALLATION_SELECTION_REQUIRED', 'UPDATE_REQUIRED'].includes(state.operationalStatus),
-    message: updating ? 'Updating Codex. Flux will check the connection when the update finishes.' : checking ? 'Checking your Codex installation and connection…' : selection ? 'Multiple Codex installations were found. Choose which installation Flux should use.' : cannotUpdate ? 'This installation cannot be updated automatically by Flux.' : state.operationalStatus === 'READY' ? 'Codex is connected and ready.' : failures[state.verificationReason ?? 'UNKNOWN_INCOMPATIBILITY'],
+    message: updating ? 'Updating Codex. Flux will check the connection when the update finishes.' : checking ? 'Checking your Codex installation and connection…' : selection ? 'Multiple Codex installations were found. Choose which installation Flux should use.' : cannotUpdate ? 'This installation cannot be updated automatically by Flux.' : state.operationalStatus === 'READY' ? (snapshot.updateProgress?.stage === 'COMPLETED' ? 'Codex is ready to use.' : 'Codex is connected and ready.') : failures[state.verificationReason ?? 'UNKNOWN_INCOMPATIBILITY'],
     detail: !busy && !selection && !cannotUpdate && state.updateProblem ? updateMessages[state.updateProblem] : null,
   };
 }

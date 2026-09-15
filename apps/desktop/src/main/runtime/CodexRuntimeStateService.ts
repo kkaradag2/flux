@@ -5,6 +5,7 @@ import type { RuntimeStateStore } from './CodexRuntimeStateRepository';
 import type { CodexUpdater } from './CodexUpdateService';
 import type { CodexInstallationService } from './CodexInstallationService';
 import type { CodexInstallationCandidate } from '../../shared/codex-installation';
+import type { CodexUpdateProgress, CodexUpdateStage } from '../../shared/codex-update-progress';
 interface Health { refresh(): Promise<CodexRuntimeHealth>; invalidate(): void }
 interface Verifier { run(): Promise<CodexSmokeTestResult>; shutdown(): Promise<void> }
 const initial = (): CodexRuntimeState => ({ runtime: 'codex', cliVersion: null, authenticationMethod: null, operationalStatus: 'CHECKING', verificationStatus: 'unverified', verificationReason: null, verifiedAt: null, updatedAt: new Date().toISOString(), updateProblem: null });
@@ -21,8 +22,10 @@ export class CodexRuntimeStateService {
   private loaded = false;
   private stopped = false;
   private listing: Promise<CodexInstallationCandidate[]> | null = null;
+  private updateProgress: CodexUpdateProgress | null = null;
   constructor(private repository: RuntimeStateStore, private health: Health, private verifier: Verifier, private updater: CodexUpdater, private installations?: CodexInstallationService) {}
-  snapshot(): CodexRuntimeSnapshot { return { state: { ...this.state }, activity: this.activity, ...(this.installations ? { installation: this.installations.currentSummary() } : {}) }; }
+  snapshot(): CodexRuntimeSnapshot { return { state: { ...this.state }, activity: this.activity, updateProgress: this.updateProgress ? { ...this.updateProgress } : null, ...(this.installations ? { installation: this.installations.currentSummary() } : {}) }; }
+  private updateStage(stage: CodexUpdateStage): void { this.updateProgress = { stage, startedAt: this.updateProgress?.startedAt ?? new Date().toISOString() }; }
   candidates(): Promise<CodexInstallationCandidate[]> {
     if (this.listing) return this.listing;
     const prior = this.pending;
@@ -45,9 +48,12 @@ export class CodexRuntimeStateService {
       await this.load();
       if (this.state.operationalStatus !== 'UPDATE_REQUIRED' || this.state.verificationReason !== 'CLI_TOO_OLD') return;
       if (this.installations && !this.installations.currentSummary().canUpdate) return;
+      this.updateProgress = null;
+      this.updateStage('PREPARING');
       const previousVersion = this.state.cliVersion;
-      const problem = await this.updater.update();
+      const problem = await this.updater.update(() => this.updateStage('INSTALLING'));
       if (problem) { await this.save({ ...this.state, updateProblem: problem, updatedAt: new Date().toISOString() }); return; }
+      this.updateStage('CHECKING_VERSION');
       // Invalidate persistent verification before checking the new installation.
       await this.save({ ...this.state, operationalStatus: 'CHECKING', verificationStatus: 'unverified', verificationReason: null, verifiedAt: null, updateProblem: null, updatedAt: new Date().toISOString() });
       this.health.invalidate();
@@ -63,7 +69,13 @@ export class CodexRuntimeStateService {
     this.pending = (async () => { await priorListing; await action(); })().catch((error: unknown) => {
       if (error instanceof Error && error.name === 'InstallationSelectionError') throw error;
       this.state = { ...this.state, operationalStatus: 'VERIFICATION_FAILED', verificationStatus: 'failed', verificationReason: 'UNKNOWN_INCOMPATIBILITY', updateProblem: 'SAVE_FAILED', updatedAt: new Date().toISOString() };
-    }).then(() => { this.activity = null; return this.snapshot(); }).finally(() => { this.activity = null; this.pending = null; });
+    }).then(() => {
+      if (activity === 'updating' && this.updateProgress) {
+        if (this.state.operationalStatus === 'READY') this.updateStage('COMPLETED');
+        else this.updateProgress = null;
+      }
+      this.activity = null; return this.snapshot();
+    }).finally(() => { this.activity = null; this.pending = null; });
     return this.pending;
   }
   private async load(): Promise<void> { if (!this.loaded) { const saved = await this.repository.load(); if (saved) this.state = saved; this.loaded = true; } }
@@ -92,6 +104,7 @@ export class CodexRuntimeStateService {
     // Store invalidation before starting an asynchronous model call (including crash/restart).
     await this.save(base);
     if (this.stopped) return;
+    if (this.activity === 'updating' && this.updateProgress) this.updateStage('VERIFYING_CONNECTION');
     const result = await this.verifier.run();
     const passed = result.status === 'passed' && result.response === 'Hello from Flux.';
     const reason = passed ? null : result.verificationReason ?? 'UNKNOWN_INCOMPATIBILITY';

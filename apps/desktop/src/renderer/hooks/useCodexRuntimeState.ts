@@ -6,7 +6,7 @@ export function useCodexRuntimeState() {
   const [requestActivity, setRequestActivity] = useState<CodexRuntimeSnapshot['activity']>('checking');
   const mounted = useRef(false); const busy = useRef(false);
   const read = useCallback(async (): Promise<void> => {
-    try { const result = await window.flux.getCodexRuntimeState(); if (mounted.current) { if (result.ok) { setSnapshot(result.value); setError(null); } else setError('Codex could not be checked. Please try again.'); } }
+    try { const result = await window.flux.getCodexRuntimeState(); if (mounted.current) { if (result.ok) { setSnapshot(current => JSON.stringify(current) === JSON.stringify(result.value) ? current : result.value); setError(null); } else setError('Codex could not be checked. Please try again.'); } }
     catch { if (mounted.current) setError('Codex could not be checked. Please try again.'); }
   }, []);
   const action = useCallback(async (kind: 'inspect' | 'retry' | 'update' | 'select', id?: string): Promise<void> => {
@@ -25,11 +25,11 @@ export function useCodexRuntimeState() {
     return () => { mounted.current = false; };
   }, [read, action]);
   useEffect(() => {
-    if (!snapshot?.activity) return;
+    if (!requestActivity && !snapshot?.activity) return;
     let stopped = false; let timer: ReturnType<typeof setTimeout>;
-    const poll = async (): Promise<void> => { await read(); if (!stopped) timer = setTimeout(() => void poll(), 500); };
-    timer = setTimeout(() => void poll(), 500);
+    const poll = async (): Promise<void> => { await read(); if (!stopped) timer = setTimeout(() => void poll(), 2000); };
+    timer = setTimeout(() => void poll(), 2000);
     return () => { stopped = true; clearTimeout(timer); };
-  }, [snapshot?.activity, read]);
-  return { snapshot: snapshot ? { ...snapshot, activity: requestActivity ?? snapshot.activity } : null, error, retry: () => void action('retry'), update: () => void action('update'), select: (id: string) => void action('select', id) };
+  }, [requestActivity, snapshot?.activity, read]);
+  return { snapshot: snapshot ? { ...snapshot, activity: snapshot.activity === 'updating' ? 'updating' : requestActivity ?? snapshot.activity } : null, error, retry: () => void action('retry'), update: () => void action('update'), select: (id: string) => void action('select', id) };
 }

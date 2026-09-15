@@ -9,7 +9,7 @@ export type CodexRuntimeState = {
   updateProblem: UpdateProblem;
   installationId?: string | null;
 };
-export type CodexRuntimeSnapshot = { state: CodexRuntimeState; activity: 'checking' | 'updating' | null; installation?: import('./codex-installation').CodexInstallationSummary };
+export type CodexRuntimeSnapshot = { state: CodexRuntimeState; activity: 'checking' | 'updating' | null; installation?: import('./codex-installation').CodexInstallationSummary; updateProgress?: import('./codex-update-progress').CodexUpdateProgress | null };
 export interface CodexRuntimeStateApi {
   getCodexRuntimeState(): Promise<ApiResult<CodexRuntimeSnapshot>>;
   inspectCodexRuntime(): Promise<ApiResult<CodexRuntimeSnapshot>>;
