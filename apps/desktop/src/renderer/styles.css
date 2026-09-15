@@ -260,3 +260,15 @@ svg { display: block; flex-shrink: 0; }
 @media (prefers-color-scheme: dark) {
   .team-status--working, .team-member--working .team-avatar { color: #79cba4; }
 }
+
+.project-sidebar-row { display: flex; align-items: center; min-width: 0; }
+.project-sidebar-row > .sidebar-item { flex: 1; min-width: 0; }
+.project-history-toggle { width: 24px; height: 28px; }
+.selection-options { max-height: 230px; overflow-y: auto; }
+.selection-menu { max-width: min(300px, calc(100vw - 100px)); }
+.selection-menu button > .selection-option-label { display: flex; flex-direction: column; gap: 3px; min-width: 0; color: var(--text-primary); font-size: 12px; overflow-wrap: anywhere; }
+.selection-option-label small { color: var(--text-secondary); font-size: 10px; line-height: 1.4; }
+.selection-menu .selection-action { border-top: 1px solid var(--border-subtle); border-radius: 0; margin-top: 4px; }
+.workspace-notice { margin: 0 12px 8px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.workspace-error { color: #a4342c; }
+@media (prefers-color-scheme: dark) { .workspace-error { color: #f0a199; } }

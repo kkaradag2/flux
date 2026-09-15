@@ -3,12 +3,12 @@ import { ProjectSelector } from './ProjectSelector';
 import { BranchSelector } from './BranchSelector';
 import { SelectorButton } from '../shared/SelectorButton';
 export function ComposerContextBar() {
-  const { selections, select } = useWorkspace();
+  const { projects, activeProject, branches, loading, selectProject, addProject, selectBranch } = useWorkspace();
   return (
-    <div className="composer-context-bar" aria-label="Task context">
-      <ProjectSelector value={selections.project} options={['Flux']} onSelect={value => select('project', value)} />
-      <SelectorButton label="Environment" icon="terminal" value={selections.environment} options={['Local']} onSelect={value => select('environment', value)} />
-      <BranchSelector value={selections.branch} options={['main']} onSelect={value => select('branch', value)} />
+    <div className="composer-context-bar" aria-label="Task context" aria-busy={loading}>
+      <ProjectSelector value={activeProject?.id ?? ''} displayValue={activeProject?.name ?? 'Select project'} options={projects.map(project => ({ value: project.id, label: project.name, description: project.path }))} disabled={loading} onSelect={id => void selectProject(id)} action={{ label: 'Add project...', onSelect: () => void addProject() }} />
+      <SelectorButton label="Environment" icon="terminal" value="Local" options={['Local']} />
+      <BranchSelector value={activeProject?.selectedBranch ?? ''} displayValue={activeProject?.selectedBranch || 'Select branch'} options={branches} disabled={loading || !branches.length} onSelect={branch => void selectBranch(branch)} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 # Flux çalışma kuralları
 
-- Yalnızca `C:\WorkSpace\AI\Flux` altında çalış. Bu dizinin dışındaki hiçbir dosyayı veya projeyi okuma, değiştirme ya da tarama. Özellikle Recallio ve diğer projelere dokunma.
+- Yalnızca `C:\WorkSpace\AI\Flux` altında çalış. Bu dizinin dışındaki projeleri kendiliğinden tarama veya değiştirme. Uygulama yalnızca kullanıcının native picker ile seçtiği klasörleri inceleyebilir. Özellikle Recallio ve diğer projelere dokunma.
 - Kullanıcı talebinin dışına çıkma.
 - Büyük değişiklikleri küçük ve doğrulanabilir adımlara böl.
 - Bir bağımlılık eklemeden önce neden gerekli olduğunu belirt.
@@ -14,4 +14,4 @@
 
 Mevcut tasarım ve prompt davranışları korunur. Prompt seçimleri yalnızca Project, Environment ve Branch içerir; runtime agent tanımına aittir. Sağdaki TeamPanel sabit Core Team özetidir: Lead, Developer, Reviewer ve Tester; her birinin runtime değeri Codex. Typed dizi TeamMemberRow bileşenleriyle render edilir. Agent ekleme/çıkarma, editor, runtime selector veya takım oluşturma geliştirilmez.
 
-WorkspaceContext ve sidebar hook ayrımı korunur. TypeScript strict korunur; any kullanılmaz. Electron IPC veya gerçek entegrasyon eklenmez. Commit veya push yapılmaz; sonraki aşamaya geçilmez.
+WorkspaceContext ve sidebar hook ayrımı korunur. TypeScript strict korunur; any kullanılmaz. Proje ve local branch seçimi için typed preload API ve main process servisleri kullanılır. JSON kayıtları userData altında ProjectRepository arkasında tutulur. Git yalnızca execFile ile okunur; checkout/switch çalıştırılmaz. Otomatik başlangıç projesi yalnızca C:\WorkSpace\AI\Flux olabilir. Commit veya push yapılmaz; sonraki aşamaya geçilmez.

@@ -1,9 +1,15 @@
 import { app, BrowserWindow, Menu, nativeTheme } from 'electron';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { ProjectRepository } from './projects/ProjectRepository';
+import { GitRepositoryService } from './projects/GitRepositoryService';
+import { ProjectService } from './projects/ProjectService';
+import { registerProjectIpc } from './projects/registerProjectIpc';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
+const trustedWindowIds = new Set<number>();
+const initialProjectPath = 'C:\\WorkSpace\\AI\\Flux';
 
 // Keep development profiles and Chromium caches inside this repository.
 if (!app.isPackaged) {
@@ -31,6 +37,10 @@ const createWindow = async (): Promise<void> => {
     },
   });
 
+  const contentsId = window.webContents.id;
+  trustedWindowIds.add(contentsId);
+  window.once('closed', () => trustedWindowIds.delete(contentsId));
+
   const updateBackground = (): void => window.setBackgroundColor(backgroundColor());
   nativeTheme.on('updated', updateBackground);
   window.once('closed', () => nativeTheme.removeListener('updated', updateBackground));
@@ -54,6 +64,12 @@ const createWindow = async (): Promise<void> => {
 };
 
 app.whenReady().then(async () => {
+  const projectService = new ProjectService(
+    new ProjectRepository(path.join(app.getPath('userData'), 'projects.json')),
+    new GitRepositoryService(),
+    initialProjectPath,
+  );
+  registerProjectIpc(projectService, trustedWindowIds, initialProjectPath);
   nativeTheme.themeSource = 'system';
   Menu.setApplicationMenu(null);
   await createWindow();
