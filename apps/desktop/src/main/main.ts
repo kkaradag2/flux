@@ -1,4 +1,10 @@
-import { app, BrowserWindow, Menu, nativeTheme } from 'electron';
+import { AgentService } from './management/AgentService';
+import { TeamService } from './management/TeamService';
+import { JsonAgentRepository } from './management/JsonAgentRepository';
+import { JsonTeamRepository } from './management/JsonTeamRepository';
+import { AgentAssetService } from './management/AgentAssetService';
+import { registerManagementIpc } from './management/registerManagementIpc';
+import { app, BrowserWindow, Menu, nativeTheme, nativeImage } from 'electron';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ProjectRepository } from './projects/ProjectRepository';
@@ -70,6 +76,13 @@ app.whenReady().then(async () => {
     initialProjectPath,
   );
   registerProjectIpc(projectService, trustedWindowIds, initialProjectPath);
+  const assets = new AgentAssetService(path.join(app.getPath('userData'), 'agent-avatars'), data => {
+    const image = nativeImage.createFromBuffer(data); const size = image.getSize();
+    return !image.isEmpty() && size.width <= 4096 && size.height <= 4096;
+  });
+  const agents = new AgentService(new JsonAgentRepository(path.join(app.getPath('userData'), 'agents.json')), assets);
+  const teams = new TeamService(new JsonTeamRepository(path.join(app.getPath('userData'), 'teams.json')), agents);
+  registerManagementIpc(agents, teams, assets, trustedWindowIds, initialProjectPath);
   nativeTheme.themeSource = 'system';
   Menu.setApplicationMenu(null);
   await createWindow();

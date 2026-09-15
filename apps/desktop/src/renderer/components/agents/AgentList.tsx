@@ -1,0 +1,3 @@
+import type { AgentDefinition } from '../../../shared/management-api';
+import { AgentListItem } from './AgentListItem';
+export function AgentList({ agents, onSelect }: { agents: readonly AgentDefinition[]; onSelect: (id: string) => void }) { return <div className="management-table"><div className="table-heading agent-columns" aria-hidden="true"><span>Agent</span><span>Runtime</span><span>Model</span><span>Reasoning</span><span>Status</span><span /></div><ul className="plain-list" aria-label="Agents">{agents.map(agent => <AgentListItem key={agent.id} agent={agent} onSelect={() => onSelect(agent.id)} />)}</ul></div>; }

@@ -7,6 +7,8 @@
   "scripts": {
     "start": "pnpm --filter @flux/desktop start",
     "typecheck": "pnpm --filter @flux/desktop typecheck",
-    "package": "pnpm --filter @flux/desktop package"
+    "package": "pnpm --filter @flux/desktop package",
+    "build": "pnpm --filter @flux/desktop build",
+    "test": "node --test apps/desktop/tests/*.test.cjs"
   }
 }

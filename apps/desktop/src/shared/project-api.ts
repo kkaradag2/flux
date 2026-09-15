@@ -1,3 +1,4 @@
+import type { ManagementApi } from './management-api';
 export type Project = {
   id: string;
   name: string;
@@ -11,7 +12,7 @@ export type ApiResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: { code: string; message: string } };
 
-export interface FluxApi {
+export interface FluxApi extends ManagementApi {
   selectProjectDirectory(): Promise<ApiResult<string | null>>;
   addProject(path: string): Promise<ApiResult<Project>>;
   getProjects(): Promise<ApiResult<Project[]>>;

@@ -1,23 +1,7 @@
-import { coreTeamMembers, type TeamMember } from '../../data/core-team';
+import { useAgentManagement, useTeamManagement } from '../../state/ManagementContext';
+import { useWorkspace } from '../../state/WorkspaceContext';
 import { TeamMemberRow } from './TeamMemberRow';
-
-interface TeamPanelProps {
-  name?: string;
-  members?: readonly TeamMember[];
-}
-
-export function TeamPanel({ name = 'Core Team', members = coreTeamMembers }: TeamPanelProps) {
-  return (
-    <aside className="workspace-inspector" aria-label="Team summary">
-      <section className="team-panel" aria-labelledby="team-heading">
-        <header className="team-summary-header">
-          <h2 id="team-heading">{name}</h2>
-          <p>{members.length} agents</p>
-        </header>
-        <ul className="plain-list team-list" aria-label="Team members">
-          {members.map(member => <TeamMemberRow key={member.id} member={member} />)}
-        </ul>
-      </section>
-    </aside>
-  );
+export function TeamPanel() {
+ const { teams, loading, error } = useTeamManagement(); const { agents, error: agentError } = useAgentManagement(); const { selectedTeamId, selectTeam } = useWorkspace(); const selected = teams.find(team => team.id === selectedTeamId);
+ return <aside className="workspace-inspector" aria-label="Team summary"><section className="team-panel"><header className="team-summary-header">{teams.length > 1 ? <select aria-label="Workspace team" value={selectedTeamId ?? ''} onChange={event => selectTeam(event.target.value)}>{teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select> : <h2>{selected?.name ?? 'Team'}</h2>}<p>{selected ? selected.agentIds.length + ' agents' : loading ? 'Loading teams…' : 'No teams available. Create one in Agents → Teams.'}</p></header>{(error || agentError) && <p role="alert" className="workspace-error">{error ?? agentError}</p>}<ul className="plain-list team-list" aria-label="Team members">{selected?.agentIds.map(id => { const member = agents.find(agent => agent.id === id); return member ? <TeamMemberRow key={id} member={member} /> : <li key={id}>Agent unavailable</li>; })}</ul></section></aside>;
 }

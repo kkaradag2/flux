@@ -16,7 +16,7 @@ export function SelectorButton({ value, displayValue = value, options = [value],
   const menu = usePopover();
   const id = useId();
   return (
-    <div className="selector-container" ref={menu.container} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) menu.close(); }}>
+    <div className={'selector-container' + (label === 'Project' ? ' project-selector' : '')} ref={menu.container} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) menu.close(); }}>
       <button ref={menu.trigger} type="button" className="selector-button" onClick={() => menu.setOpen(!menu.open)} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); menu.setOpen(true); } }} disabled={disabled} aria-label={label + ': ' + displayValue} title={label + ': ' + displayValue} aria-haspopup="menu" aria-expanded={menu.open} aria-controls={id}>
         <Icon name={icon} size={16} /><span className="truncate">{displayValue}</span><Icon name="chevron" size={13} />
       </button>

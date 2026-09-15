@@ -12,6 +12,6 @@
 
 ## Güncel aşama sınırı
 
-Mevcut tasarım ve prompt davranışları korunur. Prompt seçimleri yalnızca Project, Environment ve Branch içerir; runtime agent tanımına aittir. Sağdaki TeamPanel sabit Core Team özetidir: Lead, Developer, Reviewer ve Tester; her birinin runtime değeri Codex. Typed dizi TeamMemberRow bileşenleriyle render edilir. Agent ekleme/çıkarma, editor, runtime selector veya takım oluşturma geliştirilmez.
+Agents ve Teams yönetimi ayrı liste/create/edit ekranlarından yürütülür. Ortak typed modeller shared katmandadır. JSON ve avatar dosyaları yalnızca main process içinde repository/service arkasından Electron userData altında yönetilir; renderer typed window.flux API kullanır. Avatar içeriği JSON'a yazılmaz. Markdown preview ham HTML çalıştırmaz.
 
-WorkspaceContext ve sidebar hook ayrımı korunur. TypeScript strict korunur; any kullanılmaz. Proje ve local branch seçimi için typed preload API ve main process servisleri kullanılır. JSON kayıtları userData altında ProjectRepository arkasında tutulur. Git yalnızca execFile ile okunur; checkout/switch çalıştırılmaz. Otomatik başlangıç projesi yalnızca C:\WorkSpace\AI\Flux olabilir. Commit veya push yapılmaz; sonraki aşamaya geçilmez.
+WorkspaceContext ve mevcut proje/branch servisleri korunur. Team seçimi workspace taslağındadır; proje default team kaydı veya request persistence eklenmez. Agent runtime tanımın parçasıdır, prompt ayarı değildir. Agent/team silme, gerçek agent yürütme, Git checkout/worktree, Mastra, Coldstart, ACP veya SQLite eklenmez. Strict TypeScript ve bileşen ayrımı korunur. Commit/push yapılmaz ve sonraki aşamaya geçilmez.

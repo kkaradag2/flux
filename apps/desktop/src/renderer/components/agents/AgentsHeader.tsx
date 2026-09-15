@@ -1,0 +1,2 @@
+import { useNavigation } from '../../state/NavigationContext';
+export function AgentsHeader() { const { navigate } = useNavigation(); return <header className="agents-header"><div><h1>Agents</h1><p>Configure the agents that work in your development teams.</p></div><button className="agent-button agent-button-primary" type="button" onClick={() => navigate({ view: 'agent-create' })}>New agent</button></header>; }

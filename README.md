@@ -45,7 +45,7 @@ Electron ilk çalıştırmada kendi binary dosyasını indirebilir. `.npmrc`, pn
 
 Renderer `contextIsolation=true`, `nodeIntegration=false` ve `sandbox=true` ile çalışır. Node ve renderer TypeScript kontrolleri ayrı yapılır. React Refresh için yalnızca geliştirme sunucusunda CSP inline script izni eklenir; paketlenen HTML bu izni içermez.
 
-UI bileşenleri veri ve callback prop'ları kabul eder. `WorkspaceContext` kullanıcı mesajlarını, seçimleri ve New task sıfırlama akışını yönetir. `useSidebar` sidebar state'ini tutar; takım özeti statik typed veriden render edilir. Prompt kendi metnini yönetir; 54–180 px arasında büyür, sonra kendi içinde kayar. Enter gönderir, Shift+Enter yeni satır ekler; boş metin gönderilmez. Yalnızca kullanıcı mesajı gösterilir ve son mesaja kaydırılır. New task mesajları ve taslak metni temizleyip prompt'a focus verir; ekip ve seçimler korunur. Mesajlar oturum içindedir. Proje ve branch seçimleri main process üzerinden kalıcı kaydedilir. Yeni bağımlılık eklenmemiştir.
+UI bileşenleri veri ve callback prop'ları kabul eder. `WorkspaceContext` kullanıcı mesajlarını, seçimleri ve New task sıfırlama akışını yönetir. `useSidebar` sidebar state'ini tutar; takım özeti kalıcı agent/team kayıtlarından render edilir. Prompt kendi metnini yönetir; 54–180 px arasında büyür, sonra kendi içinde kayar. Enter gönderir, Shift+Enter yeni satır ekler; boş metin gönderilmez. Yalnızca kullanıcı mesajı gösterilir ve son mesaja kaydırılır. New task mesajları ve taslak metni temizleyip prompt'a focus verir; ekip ve seçimler korunur. Mesajlar oturum içindedir. Proje ve branch seçimleri main process üzerinden kalıcı kaydedilir. Markdown preview bağımlılıkları aşağıda açıklanmıştır.
 
 ## Doğrulanan araçlar
 
@@ -53,10 +53,9 @@ UI bileşenleri veri ve callback prop'ları kabul eder. `WorkspaceContext` kulla
 
 Çalışma sınırı `C:\WorkSpace\AI\Flux` dizinidir. Sonraki aşamaya yalnızca kullanıcı talebiyle geçilir.
 
-## Core Team özeti
+## Workspace takım özeti
 
-TeamPanel, data/core-team.ts içindeki typed diziyi TeamMemberRow bileşenleriyle gösterir. Lead, Developer, Reviewer ve Tester üyelerinin runtime değeri Codex olarak tanımlıdır. Panel yalnızca takım adı, 4 agents bilgisi ve kompakt üye satırlarını içerir; buton, menü veya empty state yoktur. Üye satırlarında typed status alanına göre Idle / Working gösterilir; runtime entegrasyonu olmadığı için başlangıç verileri Idle durumundadır. Prompt toolbar yalnızca Flux, Local ve main seçimlerini içerir. Runtime prompt ayarı değildir. Gerçek agent bağlantısı veya yürütme yoktur.
-
+TeamPanel seçili team'in sıralı üyelerini ortak avatar bileşeniyle gösterir. Birden fazla team olduğunda takım seçimi açılır. Enabled üyeler Idle, diğerleri Disabled görünür. Panelde edit işlemi ve gerçek agent yürütme yoktur.
 ## Proje kaydı ve Git sınırı
 
 `ProjectService` seçim ve yetkilendirmeyi, `GitRepositoryService` salt okunur Git komutlarını, `ProjectRepository` atomik JSON yazımını yönetir. `userData/projects.json` kayıtlı projeleri ve son aktif projeyi korur; geliştirmede bu dosya `.flux/desktop/projects.json` konumundadır. Kayıt boşsa yalnızca Flux reposu eklenir.
@@ -64,3 +63,13 @@ TeamPanel, data/core-team.ts içindeki typed diziyi TeamMemberRow bileşenleriyl
 `window.flux` API: `selectProjectDirectory`, `addProject`, `getProjects`, `getGitBranches`, `getCurrentBranch`, `selectWorkspace`. Yeni yollar yalnızca native folder picker sonucu yetkilendirilir. Aynı canonical yol tekrar eklenmez. Remote branch listelenmez. Branch seçimi kayıtlı UI tercihini değiştirir; Git HEAD ve çalışma dosyaları değişmez. Yeniden açılışta kayıtlı seçim korunur; artık bulunmayan branch için mevcut branch veya ilk local branch kullanılır.
 
 Servis doğrulaması: `node --test apps/desktop/tests/project-services.test.cjs`. Test repo ve kayıtları yalnızca `.cache/project-service-tests` altında oluşturulur; yeni commit üretilmez.
+
+## Kalıcı Agents / Teams yönetimi
+
+Agents alanında Agents ve Teams tab'ları, ayrı liste/create/edit ekranları bulunur. Form taslakları kayıtlı state'ten ayrıdır; kaydedilmemiş değişikliklerde uygulama içi dialog gösterilir. `agents.json` ve `teams.json` Electron userData altında tutulur. Eksik, boş dosya veya boş dizi ilk veriyi oluşturur; parse hatası mevcut dosyayı korur. Yazımlar geçici dosya + rename ile yapılır. Main doğrulaması ID/tarih değiştirmeyi, geçersiz runtime/effort ve team üyeliklerini reddeder.
+
+Avatarlar `agent-avatars` altında güvenli asset ID ile tutulur. PNG/JPEG/WebP, en fazla 2 MB ve 4096 × 4096 boyut kabul edilir; decode ve dosya imzası main içinde doğrulanır. Renderer yalnızca doğrulanmış data URL alır. Markdown preview için `react-markdown` + `remark-gfm` kullanılır. Ham HTML atlanır; preview bağlantıları veya görselleri dış kaynak açmaz.
+
+Workspace paneli kalıcı agent/team kayıtlarından beslenir; Disabled üyeler görünür kalır. Seçili team WorkspaceContext içinde oturumluk tutulur. Gerçek agent çalıştırma veya request kaydı yoktur.
+
+Doğrulama komutları: `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm package`. Build yalnızca main/preload/renderer üretir; package Forge ile uygulama klasörü üretir. Repository/service testleri `.cache` altında izole dosyalar kullanır.

@@ -1,0 +1,2 @@
+import type { TeamDefinition } from '../../../shared/management-api';
+export function TeamListItem({ team, onSelect }: { team: TeamDefinition; onSelect: () => void }) { return <li><button type="button" className="management-row team-columns" onClick={onSelect}><span className="record-identity"><span><strong>{team.name}</strong><small>{team.description}</small></span></span><span>{team.agentIds.length} agents</span><time dateTime={team.updatedAt}>{new Date(team.updatedAt).toLocaleDateString()}</time><span aria-hidden="true">›</span></button></li>; }

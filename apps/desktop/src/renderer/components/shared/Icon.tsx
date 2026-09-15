@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react';
 
 const paths = {
+ code: <><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18" /></>,
+ search: <><circle cx="10" cy="10" r="6" /><path d="m15 15 6 6" /></>,
+ shield: <><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6Z" /><path d="m8 12 3 3 5-6" /></>,
+ testTube: <><path d="m14 3 7 7m-5-5L3 18a3 3 0 0 0 4 4L20 9M8 13h8" /></>,
+ database: <><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 4 18 4 18 0V5M3 12c0 4 18 4 18 0" /></>,
   panel: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
   close: <path d="m6 6 12 12M6 18 18 6" />,

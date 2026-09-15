@@ -6,6 +6,8 @@ import { RequestHistoryList } from './RequestHistoryList';
 import { SidebarHeader } from './SidebarHeader';
 import { SidebarNavigation } from './SidebarNavigation';
 interface AppSidebarProps {
+  activeView: 'workspace' | 'agents';
+  onAgents: () => void;
   projects: readonly Project[];
   activeProjectId: string | null;
   loading: boolean;
@@ -17,11 +19,11 @@ interface AppSidebarProps {
   onNewTask: () => void;
   onProjectSelect: (id: string) => void;
 }
-export function AppSidebar({ projects, activeProjectId, loading, requests, collapsed, historyExpanded, onToggle, onToggleHistory, onNewTask, onProjectSelect }: AppSidebarProps) {
+export function AppSidebar({ activeView, onAgents, projects, activeProjectId, loading, requests, collapsed, historyExpanded, onToggle, onToggleHistory, onNewTask, onProjectSelect }: AppSidebarProps) {
   return (
     <aside className="app-sidebar" aria-label="Workspace sidebar">
       <SidebarHeader collapsed={collapsed} onToggle={onToggle} />
-      <SidebarNavigation onNewTask={onNewTask} />
+      <SidebarNavigation onNewTask={onNewTask} onAgents={onAgents} agentsActive={activeView === 'agents'} />
       <div className="sidebar-scroll">
         <ProjectList projects={projects} activeProjectId={activeProjectId} expanded={historyExpanded} collapsed={collapsed} loading={loading} onToggle={onToggleHistory} onSelect={onProjectSelect} history={<RequestHistoryList requests={requests} />} />
       </div>

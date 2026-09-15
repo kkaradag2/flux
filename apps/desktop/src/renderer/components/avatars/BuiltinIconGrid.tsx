@@ -1,0 +1,3 @@
+import { builtinAgentIcons, type AgentAvatar as Avatar } from '../../../shared/management-api';
+import { AgentAvatar } from './AgentAvatar';
+export function BuiltinIconGrid({ value, onChange }: { value: Avatar; onChange: (avatar: Avatar) => void }) { return <div className="builtin-icon-grid">{builtinAgentIcons.map(icon => <button type="button" key={icon} aria-label={icon} aria-pressed={value.type === 'builtin' && value.value === icon} onClick={() => onChange({ type: 'builtin', value: icon })}><AgentAvatar avatar={{ type: 'builtin', value: icon }} /><small>{icon.replaceAll('-', ' ')}</small></button>)}</div>; }
