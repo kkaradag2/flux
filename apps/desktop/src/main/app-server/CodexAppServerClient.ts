@@ -1,18 +1,22 @@
 import { CodexAppServerTransport, type AppServerWire } from './CodexAppServerTransport';
 import { CodexChatSession } from './CodexChatSession';
+import { confirmProcessExit } from './confirmProcessExit';
 import { classifyTurnError } from './verificationReason';
 import type { RuntimeCommandRunner } from '../runtime/RuntimeCommandRunner';
 import { SmokeTestError, object, identifier, requiredString, HELLO, SMOKE_PROMPT, type ServerNotification, type ServerRequest } from './contracts';
 export class CodexAppServerClient {
   constructor(private createTransport: (cwd: string, signal: AbortSignal) => Promise<AppServerWire>) {}
   createChatSession(): CodexChatSession { return new CodexChatSession(this.createTransport); }
-  static using(runner: RuntimeCommandRunner): CodexAppServerClient {
+  createStructuredSession(outputSchema: import('./contracts').AppServerJsonValue): CodexChatSession {
+    return new CodexChatSession(this.createTransport, { outputSchema });
+  }
+  static using(runner: RuntimeCommandRunner, verifyProcessExit = false): CodexAppServerClient {
     return new CodexAppServerClient(async (cwd, signal) => {
       const executable = await runner.resolveCodex();
       if (signal.aborted) throw new SmokeTestError('CANCELLED');
       if (!executable) throw new SmokeTestError('NOT_INSTALLED');
       const child = runner.start(executable, 'app-server', cwd);
-      return new CodexAppServerTransport(child, () => runner.terminate(child));
+      return new CodexAppServerTransport(child, () => verifyProcessExit ? confirmProcessExit(child, () => runner.terminate(child)) : runner.terminate(child));
     });
   }
   async run(cwd: string, signal: AbortSignal): Promise<string> {

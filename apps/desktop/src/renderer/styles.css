@@ -173,11 +173,62 @@ svg { display: block; flex-shrink: 0; }
   box-shadow: var(--composer-shadow);
 }
 
+.workspace-right-panel {
+  --task-working-color: #18734b;
+  --task-blocked-color: #95600b;
+  --task-failed-color: #ba3535;
+  --task-review-color: #6658ad;
+  background: var(--surface-composer);
+  border: 1px solid var(--border-composer);
+  border-radius: 12px;
+  box-shadow: var(--composer-shadow);
+  overflow: hidden;
+}
+.workspace-right-panel .team-panel { border: 0; border-radius: 0; box-shadow: none; }
+.workspace-panel-tabs { display: flex; gap: 18px; margin: 0 14px; border-bottom: 1px solid var(--border-subtle); }
+.workspace-panel-tabs button { padding: 11px 0 9px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.workspace-panel-tabs button:hover { color: var(--text-primary); }
+.workspace-panel-tabs button[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--text-primary); }
+.workspace-panel-tabs button:focus-visible { outline: 2px solid var(--text-secondary); outline-offset: -2px; }
+.tasks-panel { padding: 12px 14px 0; }
+.tasks-empty-state { border-top: 1px solid var(--border-subtle); padding: 20px 0 24px; }
+.tasks-empty-state h3 { margin: 0 0 6px; font-size: 13px; font-weight: 500; }
+.tasks-empty-state p { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.workspace-task-row { display: flex; align-items: flex-start; gap: 8px; border-top: 1px solid var(--border-subtle); padding: 12px 0; }
+.workspace-task-content { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.workspace-task-content h3 { margin: 0 0 7px; font-size: 13px; line-height: 1.5; font-weight: 500; }
+.workspace-task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 11px; color: var(--text-secondary); }
+.workspace-task-owner { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.workspace-task-avatar { display: grid; place-items: center; flex-shrink: 0; width: 18px; height: 18px; border-radius: 4px; background: var(--surface-hover); }
+.workspace-task-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.task-dependency-summary { margin: 7px 0 0; font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
+.task-status-icon { flex-shrink: 0; margin-top: 2px; color: var(--text-secondary); }
+.task-status-icon--working, .task-status-label--working, .task-status-icon--completed { color: var(--task-working-color); }
+.task-status-icon--blocked, .task-status-label--blocked { color: var(--task-blocked-color); }
+.task-status-icon--failed, .task-status-label--failed { color: var(--task-failed-color); }
+.task-status-icon--needs_review, .task-status-label--needs_review { color: var(--task-review-color); }
+.task-status-icon--working { animation: workspace-task-pulse 2.4s ease-in-out infinite; }
+@keyframes workspace-task-pulse { 50% { opacity: .55; } }
+@media (prefers-color-scheme: dark) {
+  .workspace-right-panel { --task-working-color: #79cba4; --task-blocked-color: #d9b16b; --task-failed-color: #f28c8c; --task-review-color: #b7a6ed; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-status-icon--working { animation: none; }
+}
+@media (max-width: 900px) { .workspace-right-panel { box-shadow: none; } }
+
 
 .team-member { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--border-subtle); }
 .team-avatar { display: grid; place-items: center; width: 22px; height: 26px; flex-shrink: 0; color: var(--text-secondary); }
 .team-member-content { min-width: 0; flex: 1; }
 .team-member-name { font-size: 13px; font-weight: 500; line-height: 19px; color: var(--text-primary); }
+.team-member-name { overflow-wrap: anywhere; }
+.organizer-badge { display: inline-block; font-size: 10px; font-weight: 400; line-height: 16px; padding: 0 5px; border-radius: 4px; background: var(--surface-hover); color: var(--text-secondary); vertical-align: middle; }
+.team-organizer-field { margin-top: 22px; }
+.team-organizer-field label { display: grid; gap: 8px; font-size: 13px; font-weight: 500; }
+.team-organizer-field select { max-width: 100%; min-width: 0; }
+.organizer-warning { font-size: 12px; line-height: 1.5; color: #95600b; }
+@media (prefers-color-scheme: dark) { .organizer-warning { color: #d9b16b; } }
 .team-runtime { font-size: 11px; line-height: 17px; color: var(--text-secondary); }
 .team-runtime > span { color: var(--text-muted); }
 .team-member .icon-button { width: 22px; height: 24px; }

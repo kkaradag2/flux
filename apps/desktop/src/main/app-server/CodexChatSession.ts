@@ -1,4 +1,5 @@
 import type { AgentRuntime } from '../../shared/management-api';
+import { turnFailureDiagnostic } from './AppServerDiagnostic';
 import type { AppServerWire } from './CodexAppServerTransport';
 import { identifier, object, requiredString, SmokeTestError, type AppServerRequests, type ServerNotification, type ServerRequest } from './contracts';
 
@@ -16,7 +17,7 @@ export class CodexChatSession implements ChatSessionPort {
   private threadId: string | null = null;
   private closed = false;
   private busy = false;
-  constructor(private open: (cwd: string, signal: AbortSignal) => Promise<AppServerWire>) {}
+  constructor(private open: (cwd: string, signal: AbortSignal) => Promise<AppServerWire>, private structured?: { outputSchema: import('./contracts').AppServerJsonValue }) {}
   async close(): Promise<void> { this.closed = true; await this.wire?.close(); }
 
   async turn(options: ChatSessionOptions, prompt: string, signal: AbortSignal, onText: (itemId: string, text: string) => void): Promise<string> {
@@ -48,7 +49,7 @@ export class CodexChatSession implements ChatSessionPort {
         const id = identifier(entry.id);
         if (typeof entry.text !== 'string' || entry.text.length > 262144 || ![undefined, null, 'commentary', 'final_answer'].includes(entry.phase as string | null | undefined)) throw new SmokeTestError('PROTOCOL_ERROR');
         texts.set(id, entry.text); phases.set(id, entry.phase); onText(id, entry.text);
-      } else if (!['userMessage', 'reasoning', 'plan', 'commandExecution'].includes(type)) {
+      } else if (!['userMessage', 'reasoning', 'plan', ...(this.structured ? [] : ['commandExecution'])].includes(type)) {
         // No file changes, external tools, dynamic tools or delegated agents in Phase 2A.
         throw new SmokeTestError('TOOL_REQUESTED');
       }
@@ -62,10 +63,12 @@ export class CodexChatSession implements ChatSessionPort {
         if (event.method === 'turn/completed') {
           const turn = object(params.turn); if (identifier(turn.id) !== turnId) return;
           if (turn.status === 'interrupted' && signal.aborted) { finished = true; resolve(''); return; }
-          if (turn.status !== 'completed') throw new SmokeTestError('TURN_FAILED');
+          if (turn.status !== 'completed') throw this.structured ? turnFailureDiagnostic(turn.error) : new SmokeTestError('TURN_FAILED');
           if (!Array.isArray(turn.items)) throw new SmokeTestError('PROTOCOL_ERROR');
           for (const value of turn.items) item(value);
-          const answer = [...texts].filter(([id]) => phases.get(id) !== 'commentary').map(([, text]) => text).join('\n\n');
+          const answers = [...texts].filter(([id]) => phases.get(id) !== 'commentary');
+          if (this.structured && answers.length !== 1) throw new SmokeTestError('PROTOCOL_ERROR');
+          const answer = answers.map(([, text]) => text).join('\n\n');
           if (!answer.trim() && !signal.aborted) throw new SmokeTestError('UNEXPECTED_RESPONSE');
           finished = true; resolve(answer);
         } else {
@@ -77,7 +80,7 @@ export class CodexChatSession implements ChatSessionPort {
           } else if (event.method === 'item/completed') item(params.item);
           else {
             const entry = object(params.item);
-            if (!['agentMessage', 'userMessage', 'reasoning', 'plan', 'commandExecution'].includes(requiredString(entry.type))) throw new SmokeTestError('TOOL_REQUESTED');
+            if (!['agentMessage', 'userMessage', 'reasoning', 'plan', ...(this.structured ? [] : ['commandExecution'])].includes(requiredString(entry.type))) throw new SmokeTestError('TOOL_REQUESTED');
           }
         }
       } catch (error) { fail(error instanceof SmokeTestError ? error : new SmokeTestError('PROTOCOL_ERROR')); }
@@ -151,6 +154,7 @@ export class CodexChatSession implements ChatSessionPort {
         threadId: this.threadId, input: [{ type: 'text', text: prompt, text_elements: [] }],
         approvalPolicy: 'never', sandboxPolicy: { type: 'readOnly', networkAccess: false },
         ...(options.runtime.reasoningEffort === 'default' ? {} : { effort: options.runtime.reasoningEffort }),
+        ...(this.structured ? { outputSchema: this.structured.outputSchema } : {}),
       })));
       turnId = identifier(object(started.turn).id);
       if (signal.aborted) cancel();

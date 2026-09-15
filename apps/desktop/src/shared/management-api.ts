@@ -4,7 +4,8 @@ export type BuiltinAgentIcon = typeof builtinAgentIcons[number];
 export type AgentAvatar = { type: 'builtin'; value: BuiltinAgentIcon } | { type: 'image'; assetId: string };
 export type AgentRuntime = { type: 'codex'; model: string | null; reasoningEffort: 'default' | 'low' | 'medium' | 'high' };
 export type AgentDefinition = { id: string; name: string; description: string; avatar: AgentAvatar; runtime: AgentRuntime; instructionsMarkdown: string; enabled: boolean; createdAt: string; updatedAt: string };
-export type TeamDefinition = { id: string; name: string; description: string; agentIds: string[]; createdAt: string; updatedAt: string };
+// null is retained only for legacy teams that need configuration before saving.
+export type TeamDefinition = { id: string; name: string; description: string; agentIds: string[]; organizerAgentId: string | null; createdAt: string; updatedAt: string };
 export type AgentInput = Omit<AgentDefinition, 'id' | 'createdAt' | 'updatedAt'>;
 export type TeamInput = Omit<TeamDefinition, 'id' | 'createdAt' | 'updatedAt'>;
 export interface ManagementApi {
