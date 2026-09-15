@@ -1,0 +1,1 @@
+export const singleAgentChannels = { start: 'single-agent:start', cancel: 'single-agent:cancel', reset: 'single-agent:reset', event: 'single-agent:event', list: 'conversations:list', open: 'conversations:open' } as const;

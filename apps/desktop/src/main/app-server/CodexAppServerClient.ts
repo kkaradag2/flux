@@ -1,9 +1,11 @@
 import { CodexAppServerTransport, type AppServerWire } from './CodexAppServerTransport';
+import { CodexChatSession } from './CodexChatSession';
 import { classifyTurnError } from './verificationReason';
 import type { RuntimeCommandRunner } from '../runtime/RuntimeCommandRunner';
 import { SmokeTestError, object, identifier, requiredString, HELLO, SMOKE_PROMPT, type ServerNotification, type ServerRequest } from './contracts';
 export class CodexAppServerClient {
   constructor(private createTransport: (cwd: string, signal: AbortSignal) => Promise<AppServerWire>) {}
+  createChatSession(): CodexChatSession { return new CodexChatSession(this.createTransport); }
   static using(runner: RuntimeCommandRunner): CodexAppServerClient {
     return new CodexAppServerClient(async (cwd, signal) => {
       const executable = await runner.resolveCodex();

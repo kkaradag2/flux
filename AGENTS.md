@@ -1,5 +1,9 @@
 # Flux çalışma kuralları
 
+Phase 2B istisnası: Tek-agent conversation kayıtları main process ConversationRepository arkasında app-data JSON dosyalarına atomik yazılır. Kullanıcı mesajı ve Codex thread kimliği çalıştırmadan önce, partial yanıtlar aralıklı ve terminal durumda kaydedilir. Codex thread kalıcıdır; kayıtlı kimlikle thread/resume kullanılır, bulunamazsa sessizce yeni thread açılmaz. Agent adı/avatarı ve çalışma ayarları oluşturma snapshot'ından gelir. Sidebar gerçek proje geçmişini gösterir. Conversation silme, arama, rename, multi-agent, SQLite ve proje dosyası yazma yoktur.
+
+Phase 2A istisnası: Workspace composer seçili team'in ilk enabled agent'ını resmi App Server üzerinde çalıştırabilir. Kayıtlı proje/agent ayarları main process'te çözülür; renderer yalnız projectId, branch, teamId ve prompt gönderir. Her turn öncesi gerçek HEAD eşleşmesi gerekir. never approval, readOnly sandbox ve kapalı tool network zorunludur. Conversation ephemeral ve yalnız bellektedir; follow-up aynı thread'i kullanır, New task temizler. Multi-agent, dosya yazma, checkout/worktree ve conversation persistence yoktur.
+
 - Yalnızca `C:\WorkSpace\AI\Flux` altında çalış. Bu dizinin dışındaki projeleri kendiliğinden tarama veya değiştirme. Uygulama yalnızca kullanıcının native picker ile seçtiği klasörleri inceleyebilir. Özellikle Recallio ve diğer projelere dokunma.
 - Kullanıcı talebinin dışına çıkma.
 - Büyük değişiklikleri küçük ve doğrulanabilir adımlara böl.

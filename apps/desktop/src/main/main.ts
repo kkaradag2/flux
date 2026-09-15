@@ -22,6 +22,9 @@ import { ProjectRepository } from './projects/ProjectRepository';
 import { GitRepositoryService } from './projects/GitRepositoryService';
 import { ProjectService } from './projects/ProjectService';
 import { registerProjectIpc } from './projects/registerProjectIpc';
+import { SingleAgentRunService } from './chat/SingleAgentRunService';
+import { registerSingleAgentIpc } from './chat/registerSingleAgentIpc';
+import { ConversationRepository } from './chat/ConversationRepository';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -94,9 +97,6 @@ app.whenReady().then(async () => {
   const runtime = new CodexRuntimeStateService(new CodexRuntimeStateRepository(path.join(app.getPath('userData'), 'codex-runtime-state.json')), health, smokeTest, new CodexUpdateService(runtimeRunner, installations), installations);
   registerRuntimeStateIpc(runtime, trustedWindowIds);
   void runtime.inspect();
-  app.on('before-quit', event => {
-    if (runtime.running) { event.preventDefault(); void runtime.shutdown().finally(() => app.quit()); }
-  });
   const assets = new AgentAssetService(path.join(app.getPath('userData'), 'agent-avatars'), data => {
     const image = nativeImage.createFromBuffer(data); const size = image.getSize();
     return !image.isEmpty() && size.width <= 4096 && size.height <= 4096;
@@ -104,6 +104,19 @@ app.whenReady().then(async () => {
   const agents = new AgentService(new JsonAgentRepository(path.join(app.getPath('userData'), 'agents.json')), assets);
   const teams = new TeamService(new JsonTeamRepository(path.join(app.getPath('userData'), 'teams.json')), agents);
   registerManagementIpc(agents, teams, assets, trustedWindowIds, initialProjectPath);
+  const chatClient = CodexAppServerClient.using(runtimeRunner);
+  const conversations = new ConversationRepository(path.join(app.getPath('userData'), 'conversations'));
+  // A damaged history file must not prevent the rest of the app from opening.
+  // Repository errors are surfaced by the history API without replacing the file.
+  await conversations.recoverInterrupted().catch(() => undefined);
+  const chat = new SingleAgentRunService(projectService, agents, teams, runtime, () => chatClient.createChatSession(), conversations);
+  registerSingleAgentIpc(chat, trustedWindowIds);
+  let cleanedUp = false;
+  app.on('before-quit', event => {
+    if (cleanedUp) return;
+    event.preventDefault();
+    void Promise.all([chat.shutdown(), runtime.shutdown()]).finally(() => { cleanedUp = true; app.quit(); });
+  });
   nativeTheme.themeSource = 'system';
   Menu.setApplicationMenu(null);
   await createWindow();

@@ -3,9 +3,21 @@ import { managementChannels as channels } from '../shared/management-channels';
 import { contextBridge, ipcRenderer } from 'electron';
 import type { ApiResult, FluxApi } from '../shared/project-api';
 import { projectChannels } from '../shared/project-channels';
+import { singleAgentChannels } from '../shared/single-agent-channels';
+import type { SingleAgentEvent } from '../shared/single-agent-api';
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<ApiResult<T>> => ipcRenderer.invoke(channel, ...args);
 const api: FluxApi = {
+ getConversations: () => invoke(singleAgentChannels.list),
+ openConversation: id => invoke(singleAgentChannels.open, id),
+ startSingleAgentTurn: input => invoke(singleAgentChannels.start, input),
+ cancelSingleAgentTurn: () => invoke(singleAgentChannels.cancel),
+ resetSingleAgentConversation: () => invoke(singleAgentChannels.reset),
+ subscribeSingleAgentEvents: listener => {
+   const receive = (_event: Electron.IpcRendererEvent, data: SingleAgentEvent): void => listener(data);
+   ipcRenderer.on(singleAgentChannels.event, receive);
+   return () => { ipcRenderer.removeListener(singleAgentChannels.event, receive); };
+ },
  getCodexRuntimeState: () => invoke(runtimeStateChannels.get),
  inspectCodexRuntime: () => invoke(runtimeStateChannels.inspect),
  retryCodexRuntime: () => invoke(runtimeStateChannels.retry),

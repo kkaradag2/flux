@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 const paths = {
+ stop: <rect x="6" y="6" width="12" height="12" rx="1" />,
  code: <><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18" /></>,
  search: <><circle cx="10" cy="10" r="6" /><path d="m15 15 6 6" /></>,
  shield: <><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6Z" /><path d="m8 12 3 3 5-6" /></>,
