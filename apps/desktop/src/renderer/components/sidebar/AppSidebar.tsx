@@ -1,5 +1,5 @@
 import type { Project } from '../../../shared/project-api';
-import type { RequestPreview } from '../../data/workspace-preview';
+import type { ConversationSummary } from '../../../shared/conversation-api';
 import { SidebarItem } from '../shared/SidebarItem';
 import { ProjectList } from './ProjectList';
 import { RequestHistoryList } from './RequestHistoryList';
@@ -12,7 +12,9 @@ interface AppSidebarProps {
   projects: readonly Project[];
   activeProjectId: string | null;
   loading: boolean;
-  requests: readonly RequestPreview[];
+  requests: readonly ConversationSummary[];
+  selectedConversationId: string | null;
+  onConversationSelect: (id: string) => void;
   collapsed: boolean;
   historyExpanded: boolean;
   onToggle: () => void;
@@ -20,13 +22,13 @@ interface AppSidebarProps {
   onNewTask: () => void;
   onProjectSelect: (id: string) => void;
 }
-export function AppSidebar({ activeView, onSettings, onAgents, projects, activeProjectId, loading, requests, collapsed, historyExpanded, onToggle, onToggleHistory, onNewTask, onProjectSelect }: AppSidebarProps) {
+export function AppSidebar({ activeView, onSettings, onAgents, projects, activeProjectId, loading, requests, selectedConversationId, onConversationSelect, collapsed, historyExpanded, onToggle, onToggleHistory, onNewTask, onProjectSelect }: AppSidebarProps) {
   return (
     <aside className="app-sidebar" aria-label="Workspace sidebar">
       <SidebarHeader collapsed={collapsed} onToggle={onToggle} />
       <SidebarNavigation onNewTask={onNewTask} onAgents={onAgents} agentsActive={activeView === 'agents'} />
       <div className="sidebar-scroll">
-        <ProjectList projects={projects} activeProjectId={activeProjectId} expanded={historyExpanded} collapsed={collapsed} loading={loading} onToggle={onToggleHistory} onSelect={onProjectSelect} history={<RequestHistoryList requests={requests} />} />
+        <ProjectList projects={projects} activeProjectId={activeProjectId} expanded={historyExpanded} collapsed={collapsed} loading={loading} onToggle={onToggleHistory} onSelect={onProjectSelect} history={projectId => <RequestHistoryList requests={requests.filter(request => request.projectId === projectId)} selectedId={selectedConversationId ?? undefined} onSelect={onConversationSelect} />} />
       </div>
       <footer className="sidebar-footer"><SidebarItem label="Settings" icon="settings" selected={activeView === 'settings'} onClick={onSettings} /></footer>
     </aside>

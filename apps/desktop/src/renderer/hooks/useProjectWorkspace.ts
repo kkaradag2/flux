@@ -91,5 +91,17 @@ export function useProjectWorkspace() {
     setProjects(current => current.map(item => item.id === selected.id ? selected : item));
   }), [activeProject, run]);
 
-  return { projects, activeProject, branches, loading, error, selectProject, addProject, selectBranch };
+  const activateConversation = useCallback(async (id: string, branch: string, isCurrent: () => boolean): Promise<boolean> => {
+    let activated = false;
+    await run(async () => {
+      const project = projects.find(item => item.id === id);
+      if (!project) throw new Error('This conversation project is no longer registered.');
+      // Load only the explicitly selected conversation's registered project.
+      const local = unwrap(await window.flux.getGitBranches(project.path));
+      if (!mounted.current || !isCurrent()) return;
+      setActiveProject({ ...project, selectedBranch: branch }); setBranches(local); activated = true;
+    });
+    return activated;
+  }, [projects, run]);
+  return { projects, activeProject, branches, loading, error, selectProject, addProject, selectBranch, activateConversation };
 }

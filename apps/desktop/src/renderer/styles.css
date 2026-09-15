@@ -236,6 +236,20 @@ svg { display: block; flex-shrink: 0; }
 .user-message { align-self: flex-end; max-width: 90%; padding: 12px 16px; background: var(--surface-context); border-radius: 12px; overflow-wrap: anywhere; }
 .message-author { display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 6px; }
 .user-message p { margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+.agent-message { align-self: stretch; min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.agent-message-header { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; margin-bottom: 8px; }
+.agent-message .markdown-preview { padding: 0; border: 0; background: transparent; min-height: 0; }
+.agent-message pre { overflow-x: auto; max-width: 100%; }
+.chat-error { color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.chat-error p { margin: 0; }
+.conversation-status { margin-left: 12px; color: var(--text-secondary); font-size: 11px; font-weight: 400; }
+.workspace-header > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-settings-link { color: inherit; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+.workspace-return { display: block; margin: 14px 32px 0; border: 0; padding: 4px 0; background: none; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.workspace-return:hover { color: var(--text-primary); }
+.streaming-caret { display: inline-block; width: 2px; height: 14px; background: var(--text-secondary); animation: chat-caret 1s steps(2, start) infinite; }
+@keyframes chat-caret { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .streaming-caret { animation: none; } }
 .prompt-composer textarea { min-height: 54px; overflow-y: hidden; }
 
 @media (min-width: 901px) and (max-width: 1100px) {
@@ -254,11 +268,16 @@ svg { display: block; flex-shrink: 0; }
 .team-summary-header p { margin: 4px 0 0; font-size: 11px; color: var(--text-secondary); }
 .team-status { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: 11px; line-height: 18px; color: var(--text-secondary); }
 .team-status-dot { width: 5px; height: 5px; border: 1px solid currentColor; border-radius: 50%; }
-.team-status--working { color: #18734b; font-weight: 500; }
-.team-status--working .team-status-dot { background: currentColor; }
-.team-member--working .team-avatar { color: #18734b; }
+.team-member--working { --team-working-color: #18734b; --team-working-background: #18734b0d; }
+.team-status--working { color: var(--team-working-color); font-weight: 500; }
+.team-status--working .team-status-dot { background: currentColor; animation: team-status-pulse 2.4s ease-in-out infinite; }
+.team-member--working .agent-avatar { color: var(--team-working-color); background: var(--team-working-background); }
+@keyframes team-status-pulse { 50% { box-shadow: 0 0 0 3px var(--team-working-background); } }
 @media (prefers-color-scheme: dark) {
-  .team-status--working, .team-member--working .team-avatar { color: #79cba4; }
+  .team-member--working { --team-working-color: #79cba4; --team-working-background: #79cba414; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .team-status--working .team-status-dot { animation: none; }
 }
 
 .project-sidebar-row { display: flex; align-items: center; min-width: 0; }

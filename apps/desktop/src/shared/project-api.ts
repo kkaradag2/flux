@@ -1,5 +1,7 @@
 import type { CodexRuntimeStateApi } from './codex-runtime-state';
 import type { ManagementApi } from './management-api';
+import type { SingleAgentApi } from './single-agent-api';
+import type { ConversationApi } from './conversation-api';
 export type Project = {
   id: string;
   name: string;
@@ -13,7 +15,7 @@ export type ApiResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: { code: string; message: string } };
 
-export interface FluxApi extends ManagementApi, CodexRuntimeStateApi {
+export interface FluxApi extends ManagementApi, CodexRuntimeStateApi, SingleAgentApi, ConversationApi {
   selectProjectDirectory(): Promise<ApiResult<string | null>>;
   addProject(path: string): Promise<ApiResult<Project>>;
   getProjects(): Promise<ApiResult<Project[]>>;

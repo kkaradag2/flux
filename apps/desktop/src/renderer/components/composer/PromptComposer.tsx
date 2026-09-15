@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ComposerToolbar } from './ComposerToolbar';
 import { ComposerContextBar } from './ComposerContextBar';
-interface PromptComposerProps { onSend: (text: string) => void; focusOnMount?: boolean; placeholder?: string; }
-export function PromptComposer({ onSend, focusOnMount = false, placeholder = 'Describe a task' }: PromptComposerProps) {
+interface PromptComposerProps { onSend: (text: string) => boolean; focusOnMount?: boolean; placeholder?: string; disabled?: boolean; running?: boolean; onStop: () => void; }
+export function PromptComposer({ onSend, focusOnMount = false, placeholder = 'Describe a task', disabled = false, running = false, onStop }: PromptComposerProps) {
   const [text, setText] = useState('');
   const textarea = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => { if (focusOnMount) textarea.current?.focus(); }, [focusOnMount]);
@@ -14,8 +14,8 @@ export function PromptComposer({ onSend, focusOnMount = false, placeholder = 'De
     element.style.overflowY = element.scrollHeight > 180 ? 'auto' : 'hidden';
   }, [text]);
   const submit = (): void => {
-    if (!text.trim()) return;
-    onSend(text.trim()); setText(''); textarea.current?.focus();
+    if (disabled || running || !text.trim()) return;
+    if (onSend(text.trim())) { setText(''); textarea.current?.focus(); }
   };
   return (
     <section className="composer-stack" aria-label="Task composer">
@@ -24,7 +24,7 @@ export function PromptComposer({ onSend, focusOnMount = false, placeholder = 'De
         <textarea ref={textarea} aria-label="Task description" placeholder={placeholder} value={text} onChange={event => setText(event.target.value)} onKeyDown={event => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); submit(); }
         }} rows={2} spellCheck={false} />
-        <ComposerToolbar sendDisabled={!text.trim()} onSend={submit} />
+        <ComposerToolbar sendDisabled={disabled || !text.trim()} onSend={submit} running={running} onStop={onStop} />
       </div>
     </section>
   );
