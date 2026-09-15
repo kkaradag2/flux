@@ -9,4 +9,4 @@ export function defaultAgents(): AgentDefinition[] {
  ] as const;
  return rows.map(row => ({ id: row.id, name: row.name, description: row.description, avatar: { type: 'builtin', value: row.icon }, runtime: { type: 'codex', model: null, reasoningEffort: 'default' }, instructionsMarkdown: '# Responsibilities\n\n' + row.lines.map(line => '- ' + line).join('\n'), enabled: true, createdAt: now, updatedAt: now }));
 }
-export function defaultTeams(): TeamDefinition[] { const now = new Date().toISOString(); return [{ id: 'core-team', name: 'Core Team', description: 'Default software development team.', agentIds: ['lead', 'developer', 'reviewer', 'tester'], createdAt: now, updatedAt: now }]; }
+export function defaultTeams(): TeamDefinition[] { const now = new Date().toISOString(); return [{ id: 'core-team', name: 'Core Team', description: 'Default software development team.', agentIds: ['lead', 'developer', 'reviewer', 'tester'], organizerAgentId: 'lead', createdAt: now, updatedAt: now }]; }

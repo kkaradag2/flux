@@ -20,12 +20,18 @@ export function agentInput(value: unknown, stored = false): AgentInput {
  else return fail('Invalid avatar.');
  return { name: name(data.name), description: text(data.description, 'Description'), avatar: validAvatar, runtime: { type: 'codex', model: runtime.model as string | null, reasoningEffort: effort }, instructionsMarkdown: text(data.instructionsMarkdown, 'Instructions', 200000), enabled: data.enabled };
 }
-export function teamInput(value: unknown, stored = false): TeamInput {
+export function teamInput(value: unknown, stored = false, allowIncompleteLegacy = false): TeamInput {
  const data = record(value); if (!stored) immutable(data);
- if (!Array.isArray(data.agentIds) || !data.agentIds.length || data.agentIds.length > 1000 || !data.agentIds.every(id => typeof id === 'string' && id.length > 0 && id.length < 100)) return fail('A team must contain at least one valid agent.');
+ if (!Array.isArray(data.agentIds) || data.agentIds.length > 1000 || !data.agentIds.every(id => typeof id === 'string' && id.length > 0 && id.length < 100)) return fail('Invalid team members.');
  const ids: string[] = data.agentIds;
  if (new Set(ids).size !== ids.length) fail('An agent cannot appear twice in a team.');
- return { name: name(data.name), description: text(data.description, 'Description'), agentIds: [...ids] };
+ if (ids.length < 2 && !allowIncompleteLegacy) fail('A team must contain at least two different agents.');
+ const organizer = data.organizerAgentId;
+ if (!(allowIncompleteLegacy && ids.length < 2 && organizer === null)) {
+  if (typeof organizer !== 'string' || !organizer) return fail('Choose an Organizer before saving the team.');
+  if (!ids.includes(organizer)) fail('The Organizer must be a team member. Choose another Organizer before removing this member.');
+ }
+ return { name: name(data.name), description: text(data.description, 'Description'), agentIds: [...ids], organizerAgentId: organizer as string | null };
 }
 function metadata(value: unknown): { id: string; createdAt: string; updatedAt: string } {
  const data = record(value); const id = text(data.id, 'ID', 100); if (!id) fail('ID is required.');
@@ -34,4 +40,4 @@ function metadata(value: unknown): { id: string; createdAt: string; updatedAt: s
  return { id, createdAt, updatedAt };
 }
 export const storedAgent = (value: unknown): AgentDefinition => ({ ...agentInput(value, true), ...metadata(value) });
-export const storedTeam = (value: unknown): TeamDefinition => ({ ...teamInput(value, true), ...metadata(value) });
+export const storedTeam = (value: unknown): TeamDefinition => ({ ...teamInput(value, true, true), ...metadata(value) });

@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "vite.*.config.mts"]
+  "include": ["src/main/**/*.ts", "src/application/**/*.ts", "src/preload/**/*.ts", "vite.*.config.mts"]
 }

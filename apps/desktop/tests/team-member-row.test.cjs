@@ -9,7 +9,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 test('TeamMemberRow working and idle presentation', async t => {
   const root = path.resolve(__dirname, '../../..');
   const output = path.join(root, '.cache/team-member-row-tests', String(Date.now()));
-  for (const file of ['components/team/TeamMemberRow.tsx', 'components/avatars/AgentAvatar.tsx', 'components/shared/Icon.tsx', 'hooks/useAgentAvatar.ts', 'hooks/management-api.ts']) {
+  for (const file of ['components/teams/OrganizerBadge.tsx', 'components/team/TeamMemberRow.tsx', 'components/avatars/AgentAvatar.tsx', 'components/shared/Icon.tsx', 'hooks/useAgentAvatar.ts', 'hooks/management-api.ts']) {
     const destination = path.join(output, file.replace(/\.tsx?$/, '.js'));
     await fs.mkdir(path.dirname(destination), { recursive: true });
     const source = await fs.readFile(path.join(root, 'apps/desktop/src/renderer', file), 'utf8');

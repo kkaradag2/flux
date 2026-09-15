@@ -1,5 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
+import { AppServerDiagnosticError } from './AppServerDiagnostic';
 import { SmokeTestError, record, type AppServerRequests, type ServerNotification, type ServerRequest } from './contracts';
 export interface AppServerWire {
   request<M extends keyof AppServerRequests>(method: M, params: AppServerRequests[M]): Promise<unknown>;
@@ -12,7 +13,7 @@ export interface AppServerWire {
 }
 export class CodexAppServerTransport implements AppServerWire {
   private nextId = 0;
-  private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: SmokeTestError) => void }>();
+  private pending = new Map<number, { method: keyof AppServerRequests; resolve: (value: unknown) => void; reject: (error: SmokeTestError) => void }>();
   private notifications = new Set<(value: ServerNotification) => void>();
   private requests = new Set<(value: ServerRequest) => void>();
   private failures = new Set<(error: SmokeTestError) => void>();
@@ -54,9 +55,14 @@ export class CodexAppServerTransport implements AppServerWire {
         for (const listener of this.requests) listener({ id: value.id, method: value.method, params: value.params });
       } else for (const listener of this.notifications) listener({ method: value.method, params: value.params });
     } else {
-      if (typeof value.id !== 'number' || !this.pending.has(value.id) || (('result' in value) === ('error' in value))) throw new SmokeTestError('PROTOCOL_ERROR');
+      if (typeof value.id !== 'number' || !this.pending.has(value.id)) { this.fail(new AppServerDiagnosticError({ method: 'transport', category: 'RESPONSE_ID_MISMATCH' })); return; }
+      if (('result' in value) === ('error' in value)) throw new SmokeTestError('PROTOCOL_ERROR');
       const pending = this.pending.get(value.id)!; this.pending.delete(value.id);
-      if ('error' in value) pending.reject(new SmokeTestError('PROTOCOL_ERROR')); else pending.resolve(value.result);
+      if ('error' in value) {
+        const code = record(value.error) && typeof value.error.code === 'number' && Number.isSafeInteger(value.error.code) ? value.error.code : undefined;
+        const method = pending.method;
+        pending.reject(new AppServerDiagnosticError({ method: method === 'initialize' || method === 'thread/start' || method === 'thread/resume' || method === 'turn/start' ? method : 'transport', category: 'RPC_ERROR', ...(code !== undefined ? { protocolCode: code } : {}) }));
+      } else pending.resolve(value.result);
     }
   }
   private fail(error: SmokeTestError): void {
@@ -70,7 +76,7 @@ export class CodexAppServerTransport implements AppServerWire {
   }
   request<M extends keyof AppServerRequests>(method: M, params: AppServerRequests[M]): Promise<unknown> {
     const id = ++this.nextId;
-    return new Promise((resolve, reject) => { this.pending.set(id, { resolve, reject }); void this.write({ id, method, params }).catch(() => { this.pending.delete(id); reject(new SmokeTestError('PROCESS_EXIT')); }); });
+    return new Promise((resolve, reject) => { this.pending.set(id, { method, resolve, reject }); void this.write({ id, method, params }).catch(() => { this.pending.delete(id); reject(new SmokeTestError('PROCESS_EXIT')); }); });
   }
   notify(method: 'initialized'): Promise<void> { return this.write({ method }); }
   reply(id: string | number, result: unknown, error = false): Promise<void> { return this.write(error ? { id, error: { code: -32601, message: 'Unsupported during connection test.' } } : { id, result }); }
