@@ -57,6 +57,8 @@ export class ProjectRepository {
     }
   }
 
+  getSelectedProjectId(): Promise<string | null> { return this.serialized(async () => (await this.read()).selectedProjectId); }
+
   list(): Promise<Project[]> {
     return this.serialized(async () => {
       const data = await this.read();

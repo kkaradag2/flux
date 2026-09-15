@@ -104,7 +104,10 @@ export class JsonOrchestrationRepository implements OrchestrationRepository {
   async getTasks(runId: string) { return (await this.rehydrate(runId)).state.tasks; }
   async getEvents(runId: string) { return (await this.rehydrate(runId)).events; }
   async listRuns(conversationId: string): Promise<readonly TeamRun[]> {
-    recordId(conversationId); const directory = await orchestrationDirectory(this.location);
+    recordId(conversationId); return Object.freeze((await this.listAllRuns()).filter(run => run.conversationId === conversationId));
+  }
+  async listAllRuns(): Promise<readonly TeamRun[]> {
+    const directory = await orchestrationDirectory(this.location);
     let files: string[];
     try { files = await readdir(directory); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw new PersistenceError('READ_FAILED'); }
@@ -112,7 +115,7 @@ export class JsonOrchestrationRepository implements OrchestrationRepository {
     for (const name of files.filter(name => /^[a-f0-9]{64}\.json$/.test(name)).sort()) {
       const file = path.join(directory, name);
       const snapshot = await this.serialized(file, async () => rehydrated(await this.read(file)));
-      if (snapshot.state.run.conversationId === conversationId) runs.push(snapshot.state.run);
+      runs.push(snapshot.state.run);
     }
     return Object.freeze(runs.sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt) || left.id.localeCompare(right.id)));
   }

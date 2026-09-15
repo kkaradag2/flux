@@ -21,7 +21,7 @@ export function conversationId(value: unknown): string {
 export function conversationTitle(prompt: string): string { return Array.from(prompt.replace(/\s+/gu, ' ').trim()).slice(0, 60).join(''); }
 export function conversationSummary(value: Conversation): ConversationSummary {
   const { id, projectId, branchName, teamId, leadAgentId, title, status, interrupted, createdAt, updatedAt } = value;
-  return { id, projectId, branchName, teamId, leadAgentId, title, status, interrupted, createdAt, updatedAt };
+  return { ...(value.mode ? { mode: value.mode } : {}), id, projectId, branchName, teamId, leadAgentId, title, status, interrupted, createdAt, updatedAt };
 }
 export function conversationDetail(value: Conversation): ConversationDetail {
   return { ...conversationSummary(value), agentSnapshot: structuredClone(value.agentSnapshot), messages: structuredClone(value.messages) };
@@ -45,16 +45,17 @@ function parse(value: unknown): Conversation {
     if (role !== 'user' && role !== 'agent' && role !== 'system') throw new ConversationStorageError();
     if (status !== 'streaming' && status !== 'completed' && status !== 'failed' && status !== 'cancelled') throw new ConversationStorageError();
     if (typeof message.content !== 'string' || message.content.length > 2 * 1024 * 1024 || message.agentId !== (role === 'agent' ? agentDefinition.id : null)) throw new ConversationStorageError();
-    return { id: text(message.id), role, content: message.content, agentId: role === 'agent' ? agentDefinition.id : null, createdAt: date(message.createdAt), status };
+    return { ...(message.planRunId === undefined ? {} : { planRunId: text(message.planRunId) }), id: text(message.id), role, content: message.content, agentId: role === 'agent' ? agentDefinition.id : null, createdAt: date(message.createdAt), status };
   });
   if (new Set(messages.map(message => message.id)).size !== messages.length) throw new ConversationStorageError();
-  return { id: conversationId(data.id), projectId: text(data.projectId), branchName: text(data.branchName), teamId: text(data.teamId), leadAgentId: agentDefinition.id,
+  if (data.mode !== undefined && data.mode !== 'single-agent' && data.mode !== 'team') throw new ConversationStorageError();
+  return { ...(data.mode === 'team' ? { mode: 'team' as const } : {}), id: conversationId(data.id), projectId: text(data.projectId), branchName: text(data.branchName), teamId: text(data.teamId), leadAgentId: agentDefinition.id,
     codexThreadId: data.codexThreadId === null ? null : text(data.codexThreadId, 200), title, status, interrupted: data.interrupted,
     createdAt: date(data.createdAt), updatedAt: date(data.updatedAt), messages, agentDefinition,
     agentSnapshot: { id: agentDefinition.id, name: agentDefinition.name, avatar: structuredClone(agentDefinition.avatar) } };
 }
 export function markInterrupted(conversation: Conversation): Conversation {
-  if (conversation.status !== 'running') return conversation;
+  if (conversation.status !== 'running' || conversation.mode === 'team') return conversation;
   const now = new Date().toISOString();
   return { ...conversation, status: 'failed', interrupted: true, updatedAt: now,
     messages: [...conversation.messages.map(message => message.status === 'streaming' ? { ...message, status: 'failed' as const } : message),
@@ -95,6 +96,6 @@ export class ConversationRepository implements ConversationStore {
     });
   }
   async recoverInterrupted(): Promise<void> {
-    for (const value of await this.list()) if (value.status === 'running') await this.save(markInterrupted(value));
+    for (const value of await this.list()) if (value.status === 'running' && value.mode !== 'team') await this.save(markInterrupted(value));
   }
 }

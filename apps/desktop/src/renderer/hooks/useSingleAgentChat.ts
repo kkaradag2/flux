@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatAgent, RunIdentity, SingleAgentEvent, SingleAgentInput } from '../../shared/single-agent-api';
 import type { ConversationDetail } from '../../shared/conversation-api';
-export type ChatMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; agent?: ChatAgent; streaming?: boolean };
+export type ChatMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; agent?: ChatAgent; streaming?: boolean; planRunId?: string };
 export function savedChatMessages(conversation: ConversationDetail): ChatMessage[] {
-  return conversation.messages.map(message => ({ id: message.id, role: message.role === 'system' ? 'error' : message.role, text: message.content,
+  return conversation.messages.map(message => ({ id: message.id, role: message.role === 'system' ? 'error' : message.role, text: message.content, ...(message.planRunId ? { planRunId: message.planRunId } : {}),
     ...(message.role === 'agent' ? { agent: conversation.agentSnapshot, streaming: message.status === 'streaming' } : {}) }));
 }
 export function useSingleAgentChat() {

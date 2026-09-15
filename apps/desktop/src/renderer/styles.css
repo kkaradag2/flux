@@ -501,3 +501,9 @@ svg { display: block; flex-shrink: 0; }
 .smoke-test-result--failed strong { color: #b43830; }
 .smoke-test-result p { margin: 10px 0; }
 .smoke-test-result small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 8px; }
+
+.execution-plan { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px; margin-top: 16px; }
+.execution-plan > header { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.execution-plan > header span { color: var(--text-muted); font-size: 12px; }
+.execution-plan > p { margin: 12px 0; }
+.planning-activity { display: flex; gap: 8px; align-items: center; color: var(--text-muted); padding: 12px 0; font-size: 13px; }

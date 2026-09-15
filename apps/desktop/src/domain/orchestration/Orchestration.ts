@@ -148,9 +148,9 @@ function changePlan(state: OrchestrationState, command: Extract<OrchestrationCom
   return { ...state, plans: [...state.plans, plan] };
 }
 
-function transitionRun(state: OrchestrationState, command: Extract<OrchestrationCommand, { type: 'run.transition' }>, decision: OrchestrationDecision, emit: Emit): OrchestrationState {
+function transitionRun(state: OrchestrationState, command: Extract<OrchestrationCommand, { type: 'run.transition' }>, decision: OrchestrationDecision, emit: Emit, response = false): OrchestrationState {
   requireOrganizer(state, decision);
-  invariant(runTransitions[state.run.status]?.includes(command.status), 'INVALID_RUN_TRANSITION', `Cannot change run from ${state.run.status} to ${command.status}.`);
+  invariant(runTransitions[state.run.status]?.includes(command.status) || (response && state.run.status === 'planning' && command.status === 'completed'), 'INVALID_RUN_TRANSITION', `Cannot change run from ${state.run.status} to ${command.status}.`);
   if (command.status === 'completed') {
     invariant(state.tasks.every(task => !task.required || task.status === 'completed'), 'REQUIRED_TASKS_INCOMPLETE', 'Complete every required task before completing the run.');
     invariant(!state.tasks.some(task => task.status === 'working' || task.status === 'needs_review'), 'ACTIVE_TASKS_REMAIN', 'Finish or cancel active optional tasks before completing the run.');
@@ -180,7 +180,7 @@ export function createTeamRun(input: TeamRunInput, decision: OrchestrationDecisi
   invariant(input.organizerAgentId === decision.agentId, 'ORGANIZER_REQUIRED', 'The Organizer must create the run.');
   const state: OrchestrationState = { run: {
     id: input.id, conversationId: input.conversationId, projectId: input.projectId, teamId: input.teamId, organizerAgentId: input.organizerAgentId, goal: input.goal,
-    status: 'planning', createdAt: decision.occurredAt, updatedAt: decision.occurredAt, completedAt: null,
+    organizerSession: null, status: 'planning', createdAt: decision.occurredAt, updatedAt: decision.occurredAt, completedAt: null,
   }, tasks: [], plans: [] };
   const { events, emit } = eventCollector(input.id, decision);
   emit({ type: 'run.created', agentId: input.organizerAgentId, run: state.run });
@@ -190,11 +190,43 @@ export function createTeamRun(input: TeamRunInput, decision: OrchestrationDecisi
 /** The only mutation entry point. Invalid commands throw; input state is never changed. */
 export function applyOrchestrationCommand(state: OrchestrationState, command: OrchestrationCommand, decision: OrchestrationDecision): OrchestrationResult {
   validateDecision(decision, state.run.updatedAt);
-  invariant(!['completed', 'failed', 'cancelled'].includes(state.run.status), 'TERMINAL_RUN', 'This run has ended; create a new run to continue.');
+  invariant(command.type === 'run.resume_planning' || !['completed', 'failed', 'cancelled'].includes(state.run.status), 'TERMINAL_RUN', 'This run has ended; create a new run to continue.');
   validateTaskGraph(state.run.id, state.tasks);
   const { events, emit } = eventCollector(state.run.id, decision);
   let next: OrchestrationState;
   switch (command.type) {
+    case 'run.resume_planning': {
+      requireOrganizer(state, decision);
+      invariant(['completed', 'failed', 'cancelled'].includes(state.run.status) && state.tasks.length === 0 && state.plans.length === 0 && state.run.organizerSession !== null,
+        'INVALID_RUN_TRANSITION', 'Only an explicit follow-up can resume a saved planning-only session.');
+      next = { ...state, run: { ...state.run, status: 'planning', completedAt: null } };
+      emit({ type: 'run.status_changed', agentId: decision.agentId, from: state.run.status, to: 'planning', reason: 'USER_FOLLOW_UP' }); break;
+    }
+    case 'run.respond': {
+      invariant(state.tasks.length === 0 && state.plans.length === 0 && (state.run.status === 'planning' || state.run.status === 'waiting_input'), 'INVALID_RUN_TRANSITION', 'A direct response must not complete planned work.');
+      next = transitionRun(state, { type: 'run.transition', status: 'completed' }, decision, emit, true); break;
+    }
+    case 'run.set_organizer_session': {
+      requireOrganizer(state, decision);
+      invariant(command.session.runtime === 'codex' || command.session.runtime === 'claude', 'INVALID_INPUT', 'Unsupported session runtime.');
+      nonEmpty(command.session.externalSessionId, 'Session ID');
+      const previous = state.run.organizerSession;
+      invariant(!previous || (previous.runtime === command.session.runtime && previous.externalSessionId === command.session.externalSessionId), 'INVALID_INPUT', 'The Organizer session cannot be replaced.');
+      if (previous) return immutable({ state, events: [] });
+      next = { ...state, run: { ...state.run, organizerSession: { ...command.session } } };
+      emit({ type: 'run.organizer_session_set', agentId: decision.agentId, session: command.session }); break;
+    }
+    case 'plan.initialize': {
+      requireOrganizer(state, decision);
+      invariant(state.tasks.length === 0 && state.plans.length === 0 && command.tasks.length > 0, 'INVALID_PLAN', 'Only an initial non-empty plan can be initialized.');
+      const tasks = command.tasks.map(input => createTask(input, state.run.id, decision));
+      next = { ...state, tasks }; validateTaskGraph(state.run.id, tasks);
+      next = changePlan(next, { type: 'plan.create', id: command.id, summary: command.summary, taskIds: tasks.map(task => task.id) }, decision, emit);
+      for (const task of tasks) emit({ type: 'task.created', taskId: task.id, agentId: task.assigneeAgentId, delegatorAgentId: task.delegatorAgentId, task });
+      for (const task of tasks) emit({ type: 'task.assigned', taskId: task.id, agentId: task.assigneeAgentId, previousAgentId: null });
+      next = promoteReady(next, decision.occurredAt, emit);
+      next = transitionRun(next, { type: 'run.transition', status: 'running' }, decision, emit); break;
+    }
     case 'tasks.create': {
       invariant(Array.isArray(command.tasks) && command.tasks.length > 0, 'INVALID_INPUT', 'Provide at least one task.');
       const tasks = command.tasks.map(input => createTask(input, state.run.id, decision));

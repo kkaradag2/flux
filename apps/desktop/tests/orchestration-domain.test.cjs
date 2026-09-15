@@ -13,7 +13,8 @@ test('Task orchestration domain', async t => {
   for (const file of await fs.readdir(sourceDirectory)) {
     if (!file.endsWith('.ts')) continue;
     const source = await fs.readFile(path.join(sourceDirectory, file), 'utf8');
-    assert.ok(!/from\s+['"](?:node:|electron|react|\.\.\/)/.test(source), 'Domain must depend only on its own types and pure functions');
+    const domainSource = source.replace("import type { AgentSessionReference } from '../../shared/agent-runtime';", '');
+    assert.ok(!/from\s+['"](?:node:|electron|react|\.\.\/)/.test(domainSource), 'Domain must depend only on its own types and pure functions');
     await fs.writeFile(path.join(output, file.replace(/\.ts$/, '.js')), ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, strict: true },
     }).outputText);

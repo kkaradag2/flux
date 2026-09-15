@@ -40,6 +40,18 @@ test('Organizer executor with real JSONL transport and mock App Server',async t=
   const clean=()=>{assert.equal(killed,1);assert.equal(wire.pending.size,0);assert.equal(wire.notifications.size,0);assert.equal(wire.requests.size,0);assert.equal(child.stdout.listenerCount('data'),0);assert.equal(child.stderr.listenerCount('data'),0)};
   return{client,source,wire,sent,clean};
  }
+ await t.test('session persistence callback is awaited before starting a turn',async()=>{
+  const f=fixture();let release,entered;const started=new Promise(resolve=>entered=resolve);
+  const pending=new Executor(f.source).execute({...input,onSession:async session=>{
+   assert.deepEqual(session,{runtime:'codex',externalSessionId:'thread-a'});entered();await new Promise(resolve=>release=resolve);
+  }});
+  await started;assert.ok(!f.sent.some(x=>x.method==='turn/start'));release();await pending;
+  assert.equal(f.sent.filter(x=>x.method==='turn/start').length,1);f.clean();
+ });
+ await t.test('failed session persistence prevents a model turn and cleans transport',async()=>{
+  const f=fixture();await assert.rejects(new Executor(f.source).execute({...input,onSession:async()=>{throw new Error('SECRET persistence failure')}}),e=>e.code==='RUNTIME_PROTOCOL_ERROR'&&!e.message.includes('SECRET'));
+  assert.ok(!f.sent.some(x=>x.method==='turn/start'));f.clean();
+ });
  for(const decision of decisions)await t.test('valid '+decision.type+' with strict schema, instructions and safe defaults',async()=>{
   const f=fixture(JSON.stringify(decision));const result=await new Executor(f.source).execute(input);
   assert.deepEqual(result.decision,decision);assert.equal(result.session.externalSessionId,'thread-a');assert.ok(result.durationMs>=0);

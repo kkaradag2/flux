@@ -4,12 +4,12 @@ import { ChatEmptyState } from './ChatEmptyState';
 import { ChatMessageList } from './ChatMessageList';
 import { useNavigation } from '../../state/NavigationContext';
 export function ChatWorkspace() {
-  const { messages, selections, taskKey, sendMessage, loading, error, running, stop, runtimeReady, activeProject, selectedTeamId, conversation, opening, conversationError, historyError } = useWorkspace();
+  const { orchestration, messages, selections, taskKey, sendMessage, loading, error, running, stop, runtimeReady, activeProject, selectedTeamId, conversation, opening, conversationError, historyError } = useWorkspace();
   const { navigate } = useNavigation();
   return (
     <main className="chat-workspace" aria-label="Task workspace">
-      <header className="workspace-header"><span>{conversation?.title ?? (messages.length ? 'Task' : 'New task')}</span>{conversation && <small className="conversation-status">{conversation.interrupted ? 'Interrupted' : running ? 'Running' : conversation.status === 'completed' ? 'Completed' : conversation.status === 'cancelled' ? 'Cancelled' : 'Failed'}</small>}</header>
-      {opening ? <p className="workspace-notice" role="status">Loading conversation…</p> : messages.length ? <ChatMessageList messages={messages} /> : <ChatEmptyState project={selections.project} />}
+      <header className="workspace-header"><span>{conversation?.title ?? (messages.length ? 'Task' : 'New task')}</span>{conversation && <small className="conversation-status">{orchestration?.run ? orchestration.run.status.replace('_', ' ') : conversation.interrupted ? 'Interrupted' : running ? 'Running' : conversation.status === 'completed' ? 'Completed' : conversation.status === 'cancelled' ? 'Cancelled' : 'Failed'}</small>}</header>
+      {opening ? <p className="workspace-notice" role="status">Loading conversation…</p> : messages.length ? <ChatMessageList messages={messages} orchestration={orchestration} planningName={conversation?.mode === 'team' && running ? orchestration?.run?.organizerName ?? conversation.agentSnapshot.name : null} /> : <ChatEmptyState project={selections.project} />}
       <div className="composer-dock">
         {loading && <p className="workspace-notice" role="status">Loading project…</p>}
         {error && <p className="workspace-notice workspace-error" role="alert">{error}</p>}
