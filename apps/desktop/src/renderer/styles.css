@@ -383,3 +383,21 @@ svg { display: block; flex-shrink: 0; }
 .unsaved-dialog { width: min(410px, calc(100vw - 32px)); padding: 24px; color: var(--text-primary); background: var(--surface-composer); border: 1px solid var(--border-composer); border-radius: 10px; box-shadow: 0 12px 50px #0002; }
 .unsaved-dialog::backdrop { background: #0004; }.unsaved-dialog h2 { font-size: 18px; margin: 0; }.unsaved-dialog p { font-size: 13px; color: var(--text-secondary); margin: 14px 0 24px; }.unsaved-dialog > div { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 800px) { .management-area { padding: 20px 16px; }.member-actions { flex-wrap: wrap; }.team-edit-member { flex-wrap: wrap; }.agent-runtime-fields { grid-template-columns: 1fr; } }
+
+.settings-screen { max-width: 950px; padding: 34px 36px; margin: 0 auto; }
+.settings-screen h1 { font-size: 24px; font-weight: 500; margin: 0 0 36px; }
+.settings-screen h2 { font-size: 14px; font-weight: 500; margin: 0 0 16px; }
+.runtime-health { border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); padding: 20px 0; }
+.runtime-health header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.runtime-health header > div { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.runtime-health h3 { font-size: 15px; font-weight: 500; margin: 0; }
+.runtime-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.runtime-status > span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.runtime-status--ready { color: #267044; }
+.runtime-status--not-installed, .runtime-status--not-authenticated { color: #a85b17; }
+.runtime-status--error { color: #b43830; }
+.runtime-health dl { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 18px; margin: 24px 0 18px; }
+.runtime-health dt { font-size: 11px; color: var(--text-muted); margin-bottom: 7px; }
+.runtime-health dd { font-size: 13px; margin: 0; overflow-wrap: anywhere; }
+.runtime-message { margin: 0; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+@media (max-width: 760px) { .settings-screen { padding: 24px 18px; }.runtime-health dl { grid-template-columns: 1fr; } }

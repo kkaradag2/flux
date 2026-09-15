@@ -73,3 +73,9 @@ Avatarlar `agent-avatars` altında güvenli asset ID ile tutulur. PNG/JPEG/WebP,
 Workspace paneli kalıcı agent/team kayıtlarından beslenir; Disabled üyeler görünür kalır. Seçili team WorkspaceContext içinde oturumluk tutulur. Gerçek agent çalıştırma veya request kaydı yoktur.
 
 Doğrulama komutları: `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm package`. Build yalnızca main/preload/renderer üretir; package Forge ile uygulama klasörü üretir. Repository/service testleri `.cache` altında izole dosyalar kullanır.
+
+## Codex runtime sağlık kontrolü
+
+Settings → Runtimes ekranı Codex CLI kurulum, sürüm ve authentication durumunu gösterir. RuntimeCommandRunner yalnızca PATH üzerindeki adlandırılmış executable adaylarını kontrol eder. Version için 5 saniye, login status için 10 saniye sınırı kullanılır. Windows .cmd adapter'ı sabit argümanlarla ve shell:false ile çalışır; timeout'ta taskkill /t /f alt süreçleri de durdurur. macOS/Linux tarafında executable doğrudan çalıştırılır ve timeout'ta süreç grubu sonlandırılır.
+
+CodexRuntimeProbe yalnızca doğrulanmış sürüm ve sabit ChatGPT/API key etiketlerini döndürür. Ham stdout/stderr, executable yolu ve credential içeriği renderer'a gönderilmez veya dosyaya yazılmaz. Auth dosyaları uygulama tarafından açılmaz. RuntimeHealthService eşzamanlı çağrıları birleştirir ve son sonucu bellekte tutar; Refresh yeni kontrol başlatır. Health sorumluluğu agent/workspace state'inden ayrıdır. Prompt/agent çalıştırma, install/login/logout işlemi eklenmemiştir.

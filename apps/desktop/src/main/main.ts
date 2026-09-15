@@ -1,3 +1,7 @@
+import { RuntimeCommandRunner } from './runtime/RuntimeCommandRunner';
+import { CodexRuntimeProbe } from './runtime/CodexRuntimeProbe';
+import { RuntimeHealthService } from './runtime/RuntimeHealthService';
+import { registerRuntimeHealthIpc } from './runtime/registerRuntimeHealthIpc';
 import { AgentService } from './management/AgentService';
 import { TeamService } from './management/TeamService';
 import { JsonAgentRepository } from './management/JsonAgentRepository';
@@ -76,6 +80,7 @@ app.whenReady().then(async () => {
     initialProjectPath,
   );
   registerProjectIpc(projectService, trustedWindowIds, initialProjectPath);
+  registerRuntimeHealthIpc(new RuntimeHealthService(new CodexRuntimeProbe(new RuntimeCommandRunner())), trustedWindowIds);
   const assets = new AgentAssetService(path.join(app.getPath('userData'), 'agent-avatars'), data => {
     const image = nativeImage.createFromBuffer(data); const size = image.getSize();
     return !image.isEmpty() && size.width <= 4096 && size.height <= 4096;

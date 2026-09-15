@@ -1,3 +1,4 @@
+import type { RuntimeHealthApi } from './runtime-health';
 import type { ManagementApi } from './management-api';
 export type Project = {
   id: string;
@@ -12,7 +13,7 @@ export type ApiResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: { code: string; message: string } };
 
-export interface FluxApi extends ManagementApi {
+export interface FluxApi extends ManagementApi, RuntimeHealthApi {
   selectProjectDirectory(): Promise<ApiResult<string | null>>;
   addProject(path: string): Promise<ApiResult<Project>>;
   getProjects(): Promise<ApiResult<Project[]>>;

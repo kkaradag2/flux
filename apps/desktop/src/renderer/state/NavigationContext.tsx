@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { UnsavedChangesDialog } from '../components/management/UnsavedChangesDialog';
-export type ManagementView = { view: 'workspace' | 'agents-list' | 'agent-create' | 'teams-list' | 'team-create' } | { view: 'agent-edit' | 'team-edit'; id: string };
+export type ManagementView = { view: 'workspace' | 'settings' | 'agents-list' | 'agent-create' | 'teams-list' | 'team-create' } | { view: 'agent-edit' | 'team-edit'; id: string };
 interface Navigation { route: ManagementView; dirty: boolean; saving: boolean; setDirty: (value: boolean) => void; setSaving: (value: boolean) => void; navigate: (route: ManagementView) => void; saved: (route: ManagementView) => void; }
 const NavigationContext = createContext<Navigation | null>(null);
 export function NavigationProvider({ children }: { children: ReactNode }) {

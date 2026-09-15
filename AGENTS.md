@@ -15,3 +15,5 @@
 Agents ve Teams yönetimi ayrı liste/create/edit ekranlarından yürütülür. Ortak typed modeller shared katmandadır. JSON ve avatar dosyaları yalnızca main process içinde repository/service arkasından Electron userData altında yönetilir; renderer typed window.flux API kullanır. Avatar içeriği JSON'a yazılmaz. Markdown preview ham HTML çalıştırmaz.
 
 WorkspaceContext ve mevcut proje/branch servisleri korunur. Team seçimi workspace taslağındadır; proje default team kaydı veya request persistence eklenmez. Agent runtime tanımın parçasıdır, prompt ayarı değildir. Agent/team silme, gerçek agent yürütme, Git checkout/worktree, Mastra, Coldstart, ACP veya SQLite eklenmez. Strict TypeScript ve bileşen ayrımı korunur. Commit/push yapılmaz ve sonraki aşamaya geçilmez.
+
+Codex runtime sağlık kontrolü RuntimeCommandRunner / CodexRuntimeProbe / RuntimeHealthService ayrımında tutulur. Sadece executable tespiti, --version ve login status çalıştırılır. Credential dosyası okunmaz, ham çıktı renderer'a taşınmaz, prompt/agent yürütülmez. Settings health hook'u workspace ve agent state'inden ayrıdır.
