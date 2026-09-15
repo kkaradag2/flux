@@ -12,4 +12,6 @@
 
 ## Güncel aşama sınırı
 
-Phase 0 tamamlandı. Kullanıcının güncel talebi kapsamında `apps/desktop` altında Electron Forge, Vite, React ve TypeScript masaüstü iskeleti kurulabilir ve çalıştırılabilir. Main, preload ve renderer ayrı tutulur; `contextIsolation=true`, `nodeIntegration=false` kullanılır. Arayüz yalnızca “Flux” başlığını gösterir. Mastra, Coldstart, SQLite ve ACP kurulmaz. Commit atılmaz; sonraki aşamaya kendiliğinden geçilmez.
+Mevcut tasarım ve prompt davranışları korunur. Prompt seçimleri yalnızca Project, Environment ve Branch içerir; runtime agent tanımına aittir. Sağdaki TeamPanel sabit Core Team özetidir: Lead, Developer, Reviewer ve Tester; her birinin runtime değeri Codex. Typed dizi TeamMemberRow bileşenleriyle render edilir. Agent ekleme/çıkarma, editor, runtime selector veya takım oluşturma geliştirilmez.
+
+WorkspaceContext ve sidebar hook ayrımı korunur. TypeScript strict korunur; any kullanılmaz. Electron IPC veya gerçek entegrasyon eklenmez. Commit veya push yapılmaz; sonraki aşamaya geçilmez.

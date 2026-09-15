@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow, Menu, nativeTheme } from 'electron';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -16,12 +16,13 @@ if (!app.isPackaged) {
 }
 
 const createWindow = async (): Promise<void> => {
+  const backgroundColor = (): string => nativeTheme.shouldUseDarkColors ? '#212121' : '#ffffff';
   const window = new BrowserWindow({
     title: 'Flux',
-    width: 1000,
+    width: 1200,
     height: 700,
     show: false,
-    backgroundColor: '#fafafa',
+    backgroundColor: backgroundColor(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -29,6 +30,10 @@ const createWindow = async (): Promise<void> => {
       sandbox: true,
     },
   });
+
+  const updateBackground = (): void => window.setBackgroundColor(backgroundColor());
+  nativeTheme.on('updated', updateBackground);
+  window.once('closed', () => nativeTheme.removeListener('updated', updateBackground));
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
@@ -49,6 +54,7 @@ const createWindow = async (): Promise<void> => {
 };
 
 app.whenReady().then(async () => {
+  nativeTheme.themeSource = 'system';
   Menu.setApplicationMenu(null);
   await createWindow();
   app.on('activate', () => {
