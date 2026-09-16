@@ -10,6 +10,8 @@ import type { ConversationDetail, ConversationSummary } from '../../shared/conve
 export interface WorkspaceSelections { project: string; environment: string; branch: string; }
 interface WorkspaceState extends ReturnType<typeof useProjectWorkspace> {
   orchestration: ConversationOrchestrationView | null;
+  askOrganizer: () => void;
+  continueAttention: () => void;
   executeNextTask: () => void;
   retryTask: () => void;
   messages: readonly ChatMessage[];
@@ -63,7 +65,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (chat.running || chat.opening) return;
     newTask(); await projectWorkspace.selectProject(id);
   }, [chat.running, chat.opening, newTask, projectWorkspace.selectProject]);
-  const value = useMemo(() => ({ ...projectWorkspace, ...chat, ...history, conversation, executeNextTask: planning.execute, retryTask: planning.retry, orchestration: isTeam ? planning.view : null,
+  const value = useMemo(() => ({ ...projectWorkspace, ...chat, ...history, conversation, askOrganizer: planning.askOrganizer, continueAttention: planning.continueAttention, executeNextTask: planning.execute, retryTask: planning.retry, orchestration: isTeam ? planning.view : null,
     ...(isTeam ? { messages: planning.messages, running: planning.running, workingAgentId: planning.workingAgentId, stop: planning.stop, conversationError: planning.error } : {}), taskKey, selections, newTask, sendMessage, selectedTeamId, selectTeam, openConversation, selectProject }), [projectWorkspace, chat, planning, conversation, isTeam, history, taskKey, selections, newTask, sendMessage, selectedTeamId, selectTeam, openConversation, selectProject]);
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

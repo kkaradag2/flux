@@ -11,7 +11,7 @@ const taskTransitions: Readonly<Record<AgentTaskStatus, readonly AgentTaskStatus
   planned: ['ready', 'blocked', 'cancelled'],
   ready: ['working', 'blocked', 'cancelled'],
   working: ['blocked', 'needs_attention', 'completed', 'failed', 'cancelled'],
-  blocked: ['ready', 'failed', 'cancelled'],
+  blocked: ['ready', 'completed', 'failed', 'cancelled'],
   needs_attention: ['ready', 'blocked', 'completed', 'failed', 'cancelled'],
   failed: ['ready', 'cancelled'],
   completed: [], cancelled: [],
@@ -189,11 +189,33 @@ export function createTeamRun(input: TeamRunInput, decision: OrchestrationDecisi
 /** The only mutation entry point. Invalid commands throw; input state is never changed. */
 export function applyOrchestrationCommand(state: OrchestrationState, command: OrchestrationCommand, decision: OrchestrationDecision): OrchestrationResult {
   validateDecision(decision, state.run.updatedAt);
-  invariant(command.type === 'run.resume_planning' || !['completed', 'failed', 'cancelled'].includes(state.run.status), 'TERMINAL_RUN', 'This run has ended; create a new run to continue.');
+  invariant(command.type === 'run.resume_planning' || command.type === 'intervention.record' && ['failed', 'cancelled'].includes(command.intervention.status) || !['completed', 'failed', 'cancelled'].includes(state.run.status), 'TERMINAL_RUN', 'This run has ended; create a new run to continue.');
   validateTaskGraph(state.run.id, state.tasks);
   const { events, emit } = eventCollector(state.run.id, decision);
   let next: OrchestrationState;
   switch (command.type) {
+    case 'intervention.record': {
+      requireOrganizer(state, decision);
+      const item = command.intervention, previous = state.interventions?.find(value => value.id === item.id);
+      const task = taskById(state, item.taskId);
+      invariant(item.id.length > 0 && item.sourceTaskRevision >= 1 && item.sourceResultRevision >= 1, 'INVALID_INPUT', 'Invalid intervention.');
+      if (!previous) {
+        invariant(item.status === 'pending' && !item.decision && ['needs_attention', 'blocked'].includes(task.status)
+          && !state.tasks.some(value => value.status === 'working') && state.run.status === 'running'
+          && !state.interventions?.some(value => value.taskId === item.taskId && value.sourceResultRevision === item.sourceResultRevision), 'INVALID_INPUT', 'Follow-up already exists or task is unavailable.');
+      } else {
+        invariant(previous.taskId === item.taskId && previous.sourceTaskRevision === item.sourceTaskRevision && previous.sourceResultRevision === item.sourceResultRevision
+          && previous.createdAt === item.createdAt && (previous.status === 'pending' || previous.status === 'decided' || previous.status === 'applied' && previous.decision?.type === 'ask_user'), 'INVALID_INPUT', 'Intervention cannot change.');
+      }
+      next = { ...state, interventions: [...(state.interventions ?? []).filter(value => value.id !== item.id), item] };
+      emit({ type: 'intervention.recorded', agentId: decision.agentId, interventionId: item.id }); break;
+    }
+    case 'task.accept_result': {
+      requireOrganizer(state, decision);
+      const task = taskById(state, command.taskId);
+      invariant(['needs_attention', 'blocked'].includes(task.status), 'INVALID_TASK_TRANSITION', 'Only an attention result can be accepted.');
+      next = transitionTask(state, { type: 'task.transition', taskId: task.id, status: 'completed' }, decision, emit); break;
+    }
     case 'run.resume_planning': {
       requireOrganizer(state, decision);
       invariant(['completed', 'failed', 'cancelled'].includes(state.run.status) && state.tasks.length === 0 && state.plans.length === 0 && state.run.organizerSession !== null,
@@ -291,5 +313,5 @@ export function applyOrchestrationCommand(state: OrchestrationState, command: Or
     case 'run.transition': next = transitionRun(state, command, decision, emit); break;
     default: throw new OrchestrationError('INVALID_INPUT', 'Unknown orchestration command.');
   }
-  return immutable({ state: { ...next, run: { ...next.run, updatedAt: decision.occurredAt } }, events });
+  return immutable({ state: { ...next, tasks: next.tasks.map(task => { const previous = state.tasks.find(value => value.id === task.id); return previous === task ? task : { ...task, revision: (previous?.revision ?? 1) + 1 }; }), run: { ...next.run, updatedAt: decision.occurredAt } }, events });
 }

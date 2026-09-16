@@ -5,7 +5,7 @@ import { turnFailureDiagnostic } from './AppServerDiagnostic';
 import type { AppServerWire } from './CodexAppServerTransport';
 import { identifier, object, requiredString, SmokeTestError, type AppServerRequests, type ServerNotification, type ServerRequest } from './contracts';
 
-export type ChatSessionOptions = { cwd: string; instructions: string; runtime: AgentRuntime; threadId?: string | null; onExecutionStarted?: () => Promise<void>; onThread?: (threadId: string) => Promise<void> };
+export type ChatSessionOptions = { preserveInstructions?: boolean; cwd: string; instructions: string; runtime: AgentRuntime; threadId?: string | null; onExecutionStarted?: () => Promise<void>; onThread?: (threadId: string) => Promise<void> };
 export class ChatThreadUnavailableError extends Error { constructor() { super('Saved Codex thread could not be resumed.'); } }
 export interface ChatSessionPort {
   turn(options: ChatSessionOptions, prompt: string, signal: AbortSignal, onText: (itemId: string, text: string) => void): Promise<string>;
@@ -25,7 +25,7 @@ export class CodexChatSession implements ChatSessionPort {
   async turn(options: ChatSessionOptions, prompt: string, signal: AbortSignal, onText: (itemId: string, text: string) => void): Promise<string> {
     return this.execute(options, prompt, signal, onText);
   }
-  async preflight(options: Pick<ChatSessionOptions, 'cwd' | 'instructions' | 'runtime'>, signal: AbortSignal, stage: (stage: PreparationStage) => void): Promise<void> {
+  async preflight(options: Pick<ChatSessionOptions, 'cwd' | 'instructions' | 'runtime' | 'threadId' | 'preserveInstructions'>, signal: AbortSignal, stage: (stage: PreparationStage) => void): Promise<void> {
     try { await this.execute(options, '', signal, () => undefined, stage); }
     finally { await this.close(); stage('Cleanup completed'); }
   }
@@ -143,7 +143,7 @@ export class CodexChatSession implements ChatSessionPort {
         const plugins = Object.fromEntries(servers.filter(server => server.pluginId !== null && server.pluginId !== undefined).map(server => [identifier(server.pluginId), { enabled: false as const }]));
         const config: Omit<AppServerRequests['thread/start'], 'ephemeral'> = {
           cwd: options.cwd, approvalPolicy: 'never', sandbox: this.structured?.taskExecution ? 'workspace-write' : 'read-only',
-          developerInstructions: options.instructions,
+          ...(options.preserveInstructions && options.threadId ? {} : { developerInstructions: options.instructions }),
           ...(options.runtime.model ? { model: options.runtime.model } : {}),
           config: { ...(this.structured?.taskExecution ? { 'sandbox_workspace_write.writable_roots': [options.cwd], 'sandbox_workspace_write.network_access': false as const, 'sandbox_workspace_write.exclude_tmpdir_env_var': true as const, 'sandbox_workspace_write.exclude_slash_tmp': true as const } : {}), web_search: 'disabled', mcp_servers: mcpServers, plugins, 'features.apps': false, 'features.multi_agent': false },
         };

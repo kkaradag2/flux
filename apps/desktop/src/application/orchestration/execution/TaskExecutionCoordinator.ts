@@ -1,3 +1,5 @@
+import { validateFollowUpDecision } from '../organizer/FollowUpDecision';
+import { attentionTask, currentIntervention } from '../organizer/OrganizerFollowUp';
 import { AgentRuntimeError } from '../../runtime/AgentRuntimeError';
 import { retryableTask, runtimePreparationRetryCandidate } from '../../../domain/orchestration/taskAttempts';
 import type { ExecutionFailure, ExecutionPhase } from '../../../domain/orchestration/models';
@@ -7,6 +9,7 @@ import type { OrchestrationRepository } from '../OrchestrationRepository';
 import type { TeamPromptSource } from '../TeamPromptSource';
 import { TaskExecutionError, type AgentTaskExecutor } from './AgentTaskExecutor';
 export interface TaskWorkspaces {
+  verifyReady?(run: TeamRun, branch: string, projectPath: string): Promise<{ cwd: string }>;
   prepare(run: TeamRun, baseBranch: string, projectPath: string, retry?: boolean): Promise<string>;
   retryablePreparation?(run: TeamRun, projectPath: string): Promise<boolean>;
   changedFiles(cwd: string): Promise<readonly string[]>;
@@ -21,10 +24,10 @@ export interface ConditionalRetryCheck {
 export class TaskExecutionCoordinator {
   private active = new Map<string, Promise<void>>();
   constructor(private repository: OrchestrationRepository, private source: TeamPromptSource, private workspaces: TaskWorkspaces,
-    private executor: Pick<AgentTaskExecutor, 'execute' | 'assertSupported'>, private clock: { now(): string; newId(): string }, private conditionalRetry?: ConditionalRetryCheck) {}
-  execute(runId: string, signal: AbortSignal, retry = false): Promise<void> {
+    private executor: Pick<AgentTaskExecutor, 'execute' | 'assertSupported'>, private clock: { now(): string; newId(): string }, private conditionalRetry?: ConditionalRetryCheck, private continuationCheck?: ConditionalRetryCheck) {}
+  execute(runId: string, signal: AbortSignal, retry = false, continuation = false): Promise<void> {
     const existing = this.active.get(runId); if (existing) return existing;
-    const operation = Promise.resolve().then(() => this.perform(runId, signal, retry)).finally(() => this.active.delete(runId)); this.active.set(runId, operation); return operation;
+    const operation = Promise.resolve().then(() => this.perform(runId, signal, retry, continuation)).finally(() => this.active.delete(runId)); this.active.set(runId, operation); return operation;
   }
   private change(runId: string, agentId: string, command: OrchestrationCommand) {
     return this.repository.update(runId, state => applyOrchestrationCommand(state, command, { id: this.clock.newId(), agentId, occurredAt: this.clock.now() }));
@@ -41,18 +44,27 @@ export class TaskExecutionCoordinator {
     const project = await this.source.getProject(run.projectId);
     return !!project && !!await this.workspaces.retryablePreparation?.(run, project.path);
   }
-  private async perform(runId: string, signal: AbortSignal, retry: boolean): Promise<void> {
+  private async perform(runId: string, signal: AbortSignal, retry: boolean, continuation: boolean): Promise<void> {
     const snapshot = await this.repository.rehydrate(runId), { run } = snapshot.state;
+    if (snapshot.state.interventions?.some(item => item.status === 'pending' || item.status === 'decided')) throw new TaskExecutionError('EXECUTION_BUSY');
     const candidate = retry ? await this.retryCandidate(runId) : null;
     if (retry && !candidate) throw new TaskExecutionError('RETRY_NOT_ALLOWED');
-    const task = retry ? candidate?.task : nextReadyTask(snapshot.state); if (!task || !snapshot.currentPlan) throw new TaskExecutionError('NO_READY_TASK');
+    const task = continuation ? attentionTask(snapshot.state) : retry ? candidate?.task : nextReadyTask(snapshot.state); if (!task || !snapshot.currentPlan) throw new TaskExecutionError('NO_READY_TASK');
+    const intervention = continuation ? currentIntervention(snapshot.state) : undefined;
+    if (continuation && (run.status !== 'running' || !task.session || intervention?.status !== 'applied' || intervention.decision?.type !== 'continue_task'
+      || intervention.sourceTaskRevision !== (task.revision ?? 1) || intervention.sourceResultRevision !== task.attempts?.at(-1)?.number || snapshot.state.tasks.some(task => task.status === 'working'))) throw new TaskExecutionError('RETRY_NOT_ALLOWED');
     const team = await this.source.getTeam(run.teamId), agent = (await this.source.getAgents()).find(agent => agent.id === task.ownerAgentId);
     if (!team?.agentIds.includes(task.ownerAgentId) || !agent?.enabled) throw new TaskExecutionError('OWNER_UNAVAILABLE');
+    if (continuation && task.session?.runtime !== agent.runtime.type) throw new TaskExecutionError('OWNER_UNAVAILABLE');
     this.executor.assertSupported(agent);
     const conversation = await this.source.getConversation(run.conversationId), project = await this.source.getProject(run.projectId);
     if (!conversation || !project || conversation.projectId !== run.projectId) throw new TaskExecutionError('UNSAFE_WORKTREE');
     if (signal.aborted) return;
     if (!task.dependsOn.every(id => snapshot.state.tasks.find(task => task.id === id)?.status === 'completed')) throw new TaskExecutionError('RETRY_NOT_ALLOWED');
+    const guidance = continuation ? validateFollowUpDecision(intervention!.decision, task.id, true) : undefined;
+    if (continuation && (!this.continuationCheck || guidance?.type !== 'continue_task')) throw new TaskExecutionError('RETRY_NOT_ALLOWED');
+    const continuedWorkspace = continuation ? await this.continuationCheck!.check({ run, task, agent, projectPath: project.path, branch: conversation.branchName }, signal) : undefined;
+    if (continuation && !continuedWorkspace) throw new TaskExecutionError('UNSAFE_WORKTREE');
     const prepared = candidate?.conditional ? await this.conditionalRetry!.check({ run, task, agent, projectPath: project.path, branch: conversation.branchName }, signal) : undefined;
     if (signal.aborted) throw new TaskExecutionError('EXECUTION_INTERRUPTED');
     if (prepared) {
@@ -67,15 +79,26 @@ export class TaskExecutionCoordinator {
         return { state: started.state, events: [...retried.events, ...started.events] };
       });
     }
+    if (continuation) {
+      const currentTeam = await this.source.getTeam(run.teamId), currentAgent = (await this.source.getAgents()).find(item => item.id === agent.id);
+      if (!currentTeam?.agentIds.includes(agent.id) || !currentAgent?.enabled || JSON.stringify(currentAgent) !== JSON.stringify(agent) || (await this.source.getProject(run.projectId))?.path !== project.path) throw new TaskExecutionError('RETRY_NOT_ALLOWED');
+      await this.repository.update(runId, state => {
+      if (JSON.stringify(state) !== JSON.stringify(snapshot.state) || signal.aborted) throw new TaskExecutionError('RETRY_NOT_ALLOWED');
+      const ready = applyOrchestrationCommand(state, { type: 'task.transition', taskId: task.id, status: 'ready', reason: 'ORGANIZER_CONTINUATION' }, { id: this.clock.newId(), agentId: run.organizerAgentId, occurredAt: this.clock.now() });
+      const started = applyOrchestrationCommand(ready.state, { type: 'task.transition', taskId: task.id, status: 'working' }, { id: this.clock.newId(), agentId: task.ownerAgentId, occurredAt: this.clock.now() });
+      return { state: started.state, events: [...ready.events, ...started.events] };
+    });
+    }
     if (retry && !prepared) await this.change(runId, run.organizerAgentId, { type: 'task.retry', taskId: task.id, verifiedLegacyPreparationFailure: candidate!.legacy });
-    if (!prepared) await this.change(runId, agent.id, { type: 'task.transition', taskId: task.id, status: 'working' });
+    if (!prepared && !continuation) await this.change(runId, agent.id, { type: 'task.transition', taskId: task.id, status: 'working' });
     const started = Date.now(); let cwd: string | undefined; let phase: ExecutionPhase = 'worktree_preparation';
     try {
-      cwd = prepared?.cwd ?? await this.workspaces.prepare(run, conversation.branchName, project.path, retry);
+      cwd = continuedWorkspace?.cwd ?? prepared?.cwd ?? await this.workspaces.prepare(run, conversation.branchName, project.path, retry);
       if (signal.aborted) throw new TaskExecutionError('EXECUTION_INTERRUPTED');
       phase = 'runtime_preparation';
       await this.change(runId, agent.id, { type: 'task.execution_phase', taskId: task.id, phase });
-      const result = await this.executor.execute({ run, plan: snapshot.currentPlan, task, agent, cwd, ...(prepared ? { runtimeIdentity: prepared.runtimeIdentity } : {}),
+      const result = await this.executor.execute({ run, plan: snapshot.currentPlan, task, agent, cwd, ...(continuedWorkspace ? { runtimeIdentity: continuedWorkspace.runtimeIdentity } : prepared ? { runtimeIdentity: prepared.runtimeIdentity } : {}),
+        ...(continuation ? { guidance: guidance?.type === 'continue_task' ? guidance.guidance : '' } : {}),
         dependencies: snapshot.state.tasks.filter(dependency => task.dependsOn.includes(dependency.id)) }, signal,
         async session => { if (signal.aborted) throw new TaskExecutionError('EXECUTION_INTERRUPTED'); await this.change(runId, agent.id, { type: 'task.set_session', taskId: task.id, session }); },
         async () => { if (signal.aborted) throw new TaskExecutionError('EXECUTION_INTERRUPTED'); phase = 'model_execution'; await this.change(runId, agent.id, { type: 'task.execution_phase', taskId: task.id, phase }); });

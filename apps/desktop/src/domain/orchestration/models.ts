@@ -31,6 +31,7 @@ export type ExecutionFailure = 'WORKTREE_PREPARATION_FAILED' | 'RUNTIME_PREPARAT
 export type TaskAttempt = Readonly<{ number: number; status: AgentTaskStatus; phase: ExecutionPhase; failure: ExecutionFailure | null; startedAt: string; finishedAt: string | null; report?: TaskExecutionReport }>;
 export type TaskExecutionReport = Readonly<{ summary: string; evidence: readonly string[]; changedFiles: readonly string[]; durationMs: number; agentName: string }>;
 export type AgentTask = Readonly<{
+  revision?: number;
   id: string;
   runId: string;
   title: string;
@@ -52,6 +53,7 @@ export type AgentTask = Readonly<{
 }>;
 
 export type OrchestrationState = Readonly<{
+  interventions?: readonly import('./interventions').TaskIntervention[];
   run: TeamRun;
   plans: readonly ExecutionPlan[];
   tasks: readonly AgentTask[];
@@ -64,6 +66,8 @@ export type AgentTaskInput = Pick<AgentTask, 'id' | 'title' | 'description' | 'o
 export type OrchestrationDecision = Readonly<{ id: string; agentId: string; occurredAt: string }>;
 
 export type OrchestrationCommand =
+  | Readonly<{ type: 'intervention.record'; intervention: import('./interventions').TaskIntervention }>
+  | Readonly<{ type: 'task.accept_result'; taskId: string }>
   | Readonly<{ type: 'run.respond' }>
   | Readonly<{ type: 'run.resume_planning' }>
   | Readonly<{ type: 'run.set_organizer_session'; session: AgentSessionReference }>

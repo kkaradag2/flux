@@ -6,7 +6,7 @@ export type RuntimePreflightResult = { passed: boolean; stages: readonly Prepara
 /** Main-process diagnostic only: no repository, IPC, prompt, turn or session-save port. */
 export class CodexRuntimePreflight {
  constructor(private source: CodexRuntimeSource) {}
- async check(options: Pick<ChatSessionOptions, 'cwd' | 'instructions' | 'runtime'> & { managedRoot: string; expectedCwd: string }, signal?: AbortSignal): Promise<RuntimePreflightResult> {
+ async check(options: Pick<ChatSessionOptions, 'cwd' | 'instructions' | 'runtime' | 'threadId' | 'preserveInstructions'> & { managedRoot: string; expectedCwd: string; runtimeIdentity?: { sourceId: string; version: string } }, signal?: AbortSignal): Promise<RuntimePreflightResult> {
   const stages: PreparationStage[] = [];
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -15,7 +15,7 @@ export class CodexRuntimePreflight {
   let session: CodexChatSession | undefined;
   let diagnostic: AppServerDiagnostic | null = null;
   try {
-   const resolved = await this.source.resolve(controller.signal);
+   const resolved = await this.source.resolve(controller.signal, options.runtimeIdentity ? { installationId: options.runtimeIdentity.sourceId, version: options.runtimeIdentity.version } : undefined);
    if (!resolved || controller.signal.aborted) throw preparationError('installation_not_ready', 'runtime');
    if (!resolved.structuredOutput) throw preparationError('unsupported_runtime_version', 'runtime');
    stages.push('Runtime source resolved');
@@ -24,7 +24,7 @@ export class CodexRuntimePreflight {
    stages.push('Worktree identity verified');
    session = resolved.client.createStructuredSession({}, true);
    // Pass only preparation fields: callers cannot inject an onThread persistence callback.
-   await session.preflight({ cwd: options.cwd, instructions: options.instructions, runtime: options.runtime }, controller.signal, stage => stages.push(stage));
+   await session.preflight({ cwd: options.cwd, instructions: options.instructions, runtime: options.runtime, ...(options.threadId ? { threadId: options.threadId } : {}), ...(options.preserveInstructions ? { preserveInstructions: true } : {}) }, controller.signal, stage => stages.push(stage));
   } catch (error) {
    diagnostic = error instanceof AppServerDiagnosticError ? error.diagnostic : preparationError('unknown_validation_failure').diagnostic;
   } finally {

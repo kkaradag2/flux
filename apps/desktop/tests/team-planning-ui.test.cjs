@@ -60,4 +60,51 @@ test('Team planning renderer controller and plan presentation',async t=>{
   h.emit({conversationId:'a',view:{...data,execution:{...data.execution,checking:false,activeTaskId:'build'},tasks:[{...data.tasks[0],status:'working'}]}});assert.equal(h.render().workingAgentId,'developer');
   h.emit({conversationId:'a',view:{...data,execution:{...data.execution,checking:false,retry:null},tasks:[{...data.tasks[0],status:'failed'}]}});assert.equal(h.render().running,false);assert.equal(h.render().workingAgentId,null);h.unmount();
  });
+ await t.test('attention controls reserve one call, Organizer Working/Idle and Stop use narrow routes', async () => {
+  const {ExecutionPlanCard}=load('components/chat/ExecutionPlanCard');
+  const data={...view('a','running'),plan:{id:'p',summary:'Plan',version:1},followUp:{canAsk:true,evaluating:false,canContinueTask:false},tasks:[{id:'build',title:'Build',status:'needs_attention',assignee:{id:'dev',name:'Developer'}}]};
+  assert.ok(renderToStaticMarkup(React.createElement(ExecutionPlanCard,{view:data})).includes('Ask Organizer'));
+  let calls=0,stopped;const done=deferred();
+  const h=harness({getConversationOrchestration:async()=>({ok:true,value:data}),requestOrganizerFollowUp:input=>{calls++;assert.deepEqual(JSON.parse(JSON.stringify(input)),{runId:'run-a'});return done.promise},cancelTeamPrompt:async input=>{stopped=input;return {ok:true}}});
+  await h.render().open(detail('a'));h.render().askOrganizer();h.render().askOrganizer();assert.equal(calls,1);
+  const evaluating={...data,followUp:{...data.followUp,canAsk:false,evaluating:true}};h.emit({conversationId:'a',view:evaluating});assert.equal(h.render().workingAgentId,'lead');assert.equal(h.render().running,true);
+  h.render().stop();assert.deepEqual(JSON.parse(JSON.stringify(stopped)),{runId:'run-a'});
+  const finished={...data,followUp:{...data.followUp,canAsk:false,canContinueTask:true}};done.resolve({ok:true,value:finished});await new Promise(r=>setImmediate(r));assert.equal(h.render().workingAgentId,null);assert.equal(h.render().running,false);
+  assert.ok(renderToStaticMarkup(React.createElement(ExecutionPlanCard,{view:finished})).includes('Continue task'));h.unmount();
+ });
+ await t.test('conversation heading reflects canonical attention, evaluating and waiting input',async()=>{
+  const compiled=await fs.readFile(path.join(base,'components/chat/ChatWorkspace.js'),'utf8');
+  for(const [status,runStatus,evaluating,label] of [['needs_attention','running',false,'Needs attention'],['blocked','running',false,'Blocked'],['needs_attention','running',true,'Organizer is evaluating'],['needs_attention','waiting_input',false,'Waiting for input']]){
+   const exports={};const state={conversation:{title:'Task'},orchestration:{run:{status:runStatus},followUp:{evaluating},tasks:[{id:'build',status,assignee:{name:'Developer'}}]},messages:[],selections:{project:'Flux'},runtimeReady:true};
+   vm.runInNewContext('(function(require,exports){'+compiled+'\n})')((id)=>id==='react/jsx-runtime'?require(id):id.includes('WorkspaceContext')?{useWorkspace:()=>state}:id.includes('NavigationContext')?{useNavigation:()=>({navigate(){}})}:new Proxy({},{get:()=>()=>null}),exports);
+   const html=renderToStaticMarkup(React.createElement(exports.ChatWorkspace));assert.ok(html.includes(label));assert.ok(!html.includes('Plan ready'));
+  }
+ });
+
+ await t.test('Continue sends run ID once, then Developer works with Stop while Organizer is idle',async()=>{
+  const {ExecutionPlanCard}=load('components/chat/ExecutionPlanCard');const data={...view('a','running'),plan:{id:'p',summary:'Plan',version:1},followUp:{canContinueTask:true},execution:{activeTaskId:null,canStart:false},tasks:[{id:'build',title:'Build',status:'needs_attention',assignee:{id:'dev',name:'Developer'}}]};
+  let calls=0,stopped;const done=deferred(),h=harness({getConversationOrchestration:async()=>({ok:true,value:data}),continueAttentionTask:input=>{calls++;assert.deepEqual(JSON.parse(JSON.stringify(input)),{runId:'run-a'});return done.promise},cancelTaskExecution:async input=>{stopped=input;return{ok:true}}});await h.render().open(detail('a'));h.render().continueAttention();h.render().continueAttention();assert.equal(calls,1);
+  const working={...data,followUp:{canContinueTask:false},execution:{activeTaskId:'build',canStart:false},tasks:[{...data.tasks[0],status:'working'}]};h.emit({conversationId:'a',view:working});assert.equal(h.render().workingAgentId,'dev');assert.equal(h.render().running,true);const html=renderToStaticMarkup(React.createElement(ExecutionPlanCard,{view:working}));assert.ok(html.includes('Working'));assert.ok(html.includes('>Stop</button>'));assert.ok(!html.includes('Continue task'));h.render().stop();assert.deepEqual(JSON.parse(JSON.stringify(stopped)),{runId:'run-a'});
+  const terminal={...data,followUp:{canContinueTask:false},tasks:[{...data.tasks[0],status:'completed'}]};done.resolve({ok:true,value:terminal});await new Promise(r=>setImmediate(r));assert.equal(h.render().workingAgentId,null);assert.equal(h.render().running,false);h.unmount();
+ });
+
+ await t.test('environment panel uses narrow explicit action, duplicate guard, spinner/cancel and safe terminal result',async()=>{
+  const compiled=await fs.readFile(path.join(base,'components/chat/WorkspaceEnvironmentPanel.js'),'utf8'),slots=[],effects=[];let index=0,prepares=0,cancels=0,finish;
+  const status={provider:'pnpm offline',state:'not_prepared',code:null,offline:true,lifecycleScripts:false,fingerprint:'a'.repeat(64),preparationRequired:true};
+  const api={getWorkspaceEnvironmentStatus:async input=>{assert.deepEqual(JSON.parse(JSON.stringify(input)),{runId:'fixture'});return {ok:true,value:status}},prepareWorkspaceEnvironment:input=>{prepares++;assert.deepEqual(JSON.parse(JSON.stringify(input)),{runId:'fixture'});return new Promise(r=>finish=r)},cancelWorkspaceEnvironment:async input=>{cancels++;assert.deepEqual(JSON.parse(JSON.stringify(input)),{runId:'fixture'});return{ok:true}}};
+  const hooks={useState:v=>{const i=index++;slots[i]??={value:v};return[slots[i].value,v=>{slots[i].value=v}]},useRef:v=>{const i=index++;slots[i]??={current:v};return slots[i]},useEffect:(fn,deps)=>{const i=index++;if(!slots[i]||deps.some((x,j)=>x!==slots[i].deps[j])){const old=slots[i];slots[i]={deps};effects.push(()=>{old?.cleanup?.();slots[i].cleanup=fn()})}}};
+  const exports={};vm.runInNewContext('(function(require,exports){'+compiled+'\n})',{window:{flux:api,setInterval,clearInterval}})(id=>id==='react'?hooks:id==='./WorkspaceDownloadConfirmation'?load('components/chat/WorkspaceDownloadConfirmation'):require(id),exports);
+  const changed=[],onPreparing=v=>changed.push(v),render=()=>{index=0;const node=exports.WorkspaceEnvironmentPanel({runId:'fixture',onPreparing});effects.splice(0).forEach(fn=>fn());return node};
+  const find=(node,text)=>{if(!node)return; if(node.type==='button'&&node.props.children===text)return node;for(const child of [node.props?.children].flat(Infinity)){if(child&&typeof child==='object'){const found=find(child,text);if(found)return found}}};
+  render();await new Promise(r=>setImmediate(r));let node=render();assert.equal(prepares,0);const button=find(node,'Prepare workspace');assert.ok(button);button.props.onClick();button.props.onClick();assert.equal(prepares,1);node=render();assert.ok(renderToStaticMarkup(node).includes('Preparing workspace'));assert.ok(!find(node,'Prepare workspace'));find(node,'Cancel').props.onClick();assert.equal(cancels,1);
+  finish({ok:true,value:{...status,state:'failed',code:'offline_dependencies_unavailable'}});await new Promise(r=>setImmediate(r));node=render();assert.ok(renderToStaticMarkup(node).includes('Network access remains disabled'));assert.equal(changed.at(-1),false);slots.forEach(slot=>slot?.cleanup?.());
+ });
+
+ await t.test('online confirmation lists scope and requires explicit confirm; Cancel is the safe focus',()=>{
+  const {WorkspaceDownloadConfirmation}=load('components/chat/WorkspaceDownloadConfirmation');
+  const html=renderToStaticMarkup(React.createElement(WorkspaceDownloadConfirmation,{plan:{registryHost:'registry.npmjs.org'},onCancel(){},onConfirm(){}}));
+  for(const text of ['Download workspace dependencies?','pnpm','registry.npmjs.org','lockfile will stay frozen','Install scripts will not run','isolated worktree','Codex agents will not receive internet access','Download dependencies','Cancel'])assert.ok(html.includes(text));
+  assert.ok(html.includes('autofocus'));assert.ok(html.includes('aria-labelledby'));
+ });
+
 });

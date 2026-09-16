@@ -23,6 +23,34 @@ test('Agents and Teams management', async t => {
  const input = { name: '  Assistant  ', description: 'Test agent', avatar: { type: 'builtin', value: 'shield' }, runtime: { type: 'codex', model: null, reasoningEffort: 'high' }, instructionsMarkdown: '# Test\n\n- Work', enabled: false };
  let created, team, imageId;
  await t.test('seeds four agents and Core Team only once', async () => { assert.deepEqual((await agents.getAgents()).map(a=>a.id), ['lead','developer','reviewer','tester']); assert.deepEqual((await teams.getTeams())[0].agentIds, ['lead','developer','reviewer','tester']); const old = await fs.readFile(agentFile, 'utf8'); await agents.getAgents(); assert.equal(await fs.readFile(agentFile, 'utf8'), old); });
+ await t.test('builtin Lead migration is exact, atomic and idempotent', async () => {
+  const { defaultAgents } = require(path.join(base, 'main/management/defaults.js'));
+  const { leadInstructions } = require(path.join(base, 'main/management/leadInstructions.js'));
+  assert.equal(defaultAgents()[0].instructionsMarkdown, leadInstructions);
+  assert.doesNotMatch(leadInstructions, /Developer|Tester|Reviewer|PASS|build|Git|review and test/);
+  const prefix = '# Responsibilities\n\n- Analyze the user request.\n- Convert the request into clear, testable tasks.\n- Assign tasks to appropriate agents.\n- Track dependencies and blockers.\n- Coordinate the team until verification is complete.\n';
+  for (const ending of ['- Do not mark work complete without review and test evidence.', '- Do not mark work complete without evidence that its expected outcomes were produced.']) {
+   const file = path.join(base, 'migration-' + ending.length + '.json');
+   const legacy = prefix + ending;
+   const records = defaultAgents(); records[0].instructionsMarkdown = legacy; records[0].name = 'Coordinator';
+   records.push({ ...records[0], id: 'custom-lead', name: 'Lead' });
+   await fs.writeFile(file, JSON.stringify(records));
+   const original = await fs.readFile(file, 'utf8'), rename = fs.rename;
+   fs.rename = async () => { throw new Error('replacement failure'); };
+   try { await assert.rejects(new JsonAgentRepository(file).list(), /previous data/); } finally { fs.rename = rename; }
+   assert.equal(await fs.readFile(file, 'utf8'), original);
+   const migrated = await new JsonAgentRepository(file).list();
+   assert.equal(migrated[0].instructionsMarkdown, leadInstructions);
+   assert.deepEqual({ ...migrated[0], instructionsMarkdown: legacy, updatedAt: records[0].updatedAt }, records[0]);
+   assert.deepEqual(migrated.slice(1), records.slice(1));
+   const stable = await fs.readFile(file, 'utf8'), stat = await fs.stat(file);
+   await new JsonAgentRepository(file).list();
+   assert.equal(await fs.readFile(file, 'utf8'), stable); assert.equal((await fs.stat(file)).mtimeMs, stat.mtimeMs);
+   records[0].name = 'Lead'; records[0].instructionsMarkdown = legacy + '\nCustom instruction';
+   await fs.writeFile(file, JSON.stringify(records));
+   assert.deepEqual(await new JsonAgentRepository(file).list(), records);
+  }
+ });
  await t.test('agent create, trim, update, immutable identity and timestamps', async () => { created = await agents.createAgent(input); assert.equal(created.name,'Assistant'); const updated = await agents.updateAgent(created.id,{...input,name:'Updated'}); assert.equal(updated.id,created.id); assert.equal(updated.createdAt,created.createdAt); for(const key of ['id','createdAt','updatedAt']) await assert.rejects(agents.updateAgent(created.id,{...input,[key]:'changed'}), /cannot be supplied/); });
  await t.test('invalid agent fields rejected in main', async () => { for(const change of [{name:' '},{runtime:{...input.runtime,type:'other'}},{runtime:{...input.runtime,reasoningEffort:'extreme'}},{enabled:'yes'},{avatar:{type:'builtin',value:'unknown'}}]) await assert.rejects(agents.createAgent({...input,...change})); });
  await t.test('supported avatar copied with safe ID and data URL', async () => { const source = path.join(base,'source.png'); await fs.writeFile(source,png); imageId = await assets.importImage(source); assert.match(imageId,/^[a-f0-9-]{36}\.png$/); assert.match(await assets.getDataUrl(imageId),/^data:image\/png;base64,/); await agents.updateAgent(created.id,{...input,avatar:{type:'image',assetId:imageId}}); const json = await fs.readFile(agentFile,'utf8'); assert.ok(!json.includes('base64') && !json.includes(source) && json.includes(imageId)); });

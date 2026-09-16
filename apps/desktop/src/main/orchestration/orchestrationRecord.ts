@@ -1,9 +1,11 @@
+import { validateFollowUpDecision } from '../../application/orchestration/organizer/FollowUpDecision';
+import type { TaskIntervention } from '../../domain/orchestration/interventions';
 import { migrateOrchestrationRecord, parseLegacyMetadata, type LegacyEventMetadata } from './orchestrationMigration';
 import { validateTaskGraph, type AgentTask, type AgentTaskStatus, type ExecutionPlan, type OrchestrationEvent, type OrchestrationState, type TeamRun, type TeamRunStatus } from '../../domain/orchestration';
 import { OrchestrationPersistenceError as PersistenceError } from '../../application/orchestration/OrchestrationPersistenceError';
 import type { RehydratedOrchestration } from '../../application/orchestration/OrchestrationRepository';
 
-export type OrchestrationRecord = Readonly<{ schemaVersion: 2; legacyEventMetadata?: readonly LegacyEventMetadata[]; revision: number; run: TeamRun; plans: readonly ExecutionPlan[]; tasks: readonly AgentTask[]; events: readonly OrchestrationEvent[] }>;
+export type OrchestrationRecord = Readonly<{ schemaVersion: 2; interventions?: readonly TaskIntervention[]; legacyEventMetadata?: readonly LegacyEventMetadata[]; revision: number; run: TeamRun; plans: readonly ExecutionPlan[]; tasks: readonly AgentTask[]; events: readonly OrchestrationEvent[] }>;
 const runStatuses: readonly TeamRunStatus[] = ['planning', 'running', 'waiting_input', 'completed', 'failed', 'cancelled'];
 import { taskStatuses } from '../../shared/task-status';
 function check(condition: unknown): asserts condition { if (!condition) throw new PersistenceError('INVALID_RECORD'); }
@@ -45,7 +47,7 @@ function task(value: unknown): AgentTask {
   const data = object(value);
   const attempts = data.attempts === undefined ? undefined : array(data.attempts, attempt);
   if (attempts) check(attempts.every((attempt, index) => attempt.number === index + 1));
-  return { ...(attempts ? { attempts } : {}), ...(data.session ? { session: session(data.session) } : {}), ...(data.execution ? { execution: execution(data.execution) } : {}), id: recordId(data.id), runId: recordId(data.runId), title: recordId(data.title), description: recordId(data.description), ownerAgentId: recordId(data.ownerAgentId), delegatorAgentId: recordId(data.delegatorAgentId),
+  return { ...(data.revision === undefined ? {} : { revision: integer(data.revision) }), ...(attempts ? { attempts } : {}), ...(data.session ? { session: session(data.session) } : {}), ...(data.execution ? { execution: execution(data.execution) } : {}), id: recordId(data.id), runId: recordId(data.runId), title: recordId(data.title), description: recordId(data.description), ownerAgentId: recordId(data.ownerAgentId), delegatorAgentId: recordId(data.delegatorAgentId),
     status: choice(data.status, taskStatuses), dependsOn: array(data.dependsOn, recordId), acceptanceCriteria: array(data.acceptanceCriteria, recordId), required: boolean(data.required),
     createdAt: date(data.createdAt), updatedAt: date(data.updatedAt), startedAt: nullable(data.startedAt, date), completedAt: nullable(data.completedAt, date) };
 }
@@ -57,6 +59,7 @@ function event(value: unknown): OrchestrationEvent {
   const data = object(value), type = recordId(data.type);
   const common = { id: recordId(data.id), runId: recordId(data.runId), occurredAt: date(data.occurredAt), actorAgentId: recordId(data.actorAgentId), agentId: recordId(data.agentId) };
   switch (type) {
+    case 'intervention.recorded': return { ...common, type, interventionId: recordId(data.interventionId) };
     case 'run.organizer_session_set': return { ...common, type, session: session(data.session) };
     case 'run.created': return { ...common, type, run: run(data.run) };
     case 'run.status_changed': return { ...common, type, from: choice(data.from, runStatuses), to: choice(data.to, runStatuses), reason: nullable(data.reason, text) };
@@ -85,15 +88,29 @@ function event(value: unknown): OrchestrationEvent {
     default: throw new PersistenceError('INVALID_RECORD');
   }
 }
+function intervention(value: unknown): TaskIntervention {
+  const data = object(value), taskId = recordId(data.taskId);
+  const decision = data.decision === null ? null : validateFollowUpDecision(data.decision, taskId, true);
+  const status = choice(data.status, ['pending', 'decided', 'applied', 'cancelled', 'failed'] as const);
+  check(!['decided', 'applied'].includes(status) || decision);
+  check(data.durationMs === undefined || typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) && data.durationMs >= 0);
+  return { id: recordId(data.id), taskId, sourceTaskRevision: integer(data.sourceTaskRevision), sourceResultRevision: integer(data.sourceResultRevision), status, decision,
+    createdAt: date(data.createdAt), updatedAt: date(data.updatedAt), ...(data.durationMs === undefined ? {} : { durationMs: data.durationMs as number }) };
+}
 export function planKey(value: ExecutionPlan): string { return JSON.stringify([value.runId, value.id, value.version]); }
 export function parseOrchestrationRecord(value: unknown): OrchestrationRecord {
   const data = object(migrateOrchestrationRecord(value));
   if (data.schemaVersion !== 2) throw new PersistenceError('UNSUPPORTED_SCHEMA');
   const metadata = parseLegacyMetadata(data.legacyEventMetadata);
-  const result: OrchestrationRecord = { schemaVersion: 2, ...(metadata.length ? { legacyEventMetadata: metadata } : {}), revision: integer(data.revision), run: run(data.run), plans: array(data.plans, plan), tasks: array(data.tasks, task), events: array(data.events, event) };
+  const result: OrchestrationRecord = { schemaVersion: 2, ...(metadata.length ? { legacyEventMetadata: metadata } : {}), ...(data.interventions === undefined ? {} : { interventions: array(data.interventions, intervention) }), revision: integer(data.revision), run: run(data.run), plans: array(data.plans, plan), tasks: array(data.tasks, task), events: array(data.events, event) };
   if (new Set(result.events.map(event => event.id)).size !== result.events.length) throw new PersistenceError('DUPLICATE_EVENT');
   if (new Set(result.plans.map(plan => plan.version)).size !== result.plans.length) throw new PersistenceError('DUPLICATE_PLAN_VERSION');
   const id = result.run.id, tasks = new Set(result.tasks.map(task => task.id));
+  if (result.interventions) {
+    check(new Set(result.interventions.map(item => item.id)).size === result.interventions.length);
+    check(new Set(result.interventions.map(item => `${item.taskId}:${item.sourceResultRevision}`)).size === result.interventions.length);
+    check(result.interventions.every(item => tasks.has(item.taskId)));
+  }
   try { validateTaskGraph(id, result.tasks); } catch { throw new PersistenceError('INVALID_RECORD'); }
   for (const plan of result.plans) {
     check(plan.runId === id && new Set(plan.taskIds).size === plan.taskIds.length && plan.taskIds.every(id => tasks.has(id)));
@@ -115,7 +132,7 @@ export function freeze<T>(value: T): T {
 }
 export function rehydrated(record: OrchestrationRecord): RehydratedOrchestration {
   const plans = [...record.plans].sort((left, right) => left.version - right.version);
-  const state: OrchestrationState = { run: record.run, plans, tasks: record.tasks };
+  const state: OrchestrationState = { ...(record.interventions ? { interventions: record.interventions } : {}), run: record.run, plans, tasks: record.tasks };
   // Stable sorting preserves append order for events emitted in the same decision.
   const events = [...record.events].sort((left, right) => Date.parse(left.occurredAt) - Date.parse(right.occurredAt));
   return freeze({ revision: record.revision, state, currentPlan: plans.at(-1) ?? null, events });

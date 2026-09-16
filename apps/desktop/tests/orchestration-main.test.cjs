@@ -155,16 +155,16 @@ test('Main orchestration composition and IPC boundary', async t => {
     f.trusted.clear(); f.subscribe(); assert.equal((await f.invoke(channels.get, f.request.conversationId)).ok, false);
     await f.composition.shutdown(); assert.equal(f.ipc.handlers.size, 0); assert.equal(f.ipc.listenerCount(channels.subscribe), 0); assert.equal(f.contents.eventNames().length, 0);
   });
-  await t.test('preload exposes four narrow methods, deduplicates callbacks and unsubscribes exactly once', async () => {
+  await t.test('preload exposes only narrow methods, deduplicates callbacks and unsubscribes exactly once', async () => {
     const ipc = new EventEmitter(), sent = [], invoked = [];
     ipc.send = (...args) => sent.push(args); ipc.invoke = async (...args) => { invoked.push(args); return { ok: true, value: null }; };
-    const api = createOrchestrationApi(ipc); assert.deepEqual(Object.keys(api).sort(), ['retryTaskExecution', 'cancelTaskExecution', 'startNextTaskExecution', 'cancelTeamPrompt', 'createTeamConversation', 'continueTeamPrompt', 'getConversationOrchestration', 'startTeamPrompt', 'subscribeToOrchestrationChanges'].sort());
+    const api = createOrchestrationApi(ipc); assert.deepEqual(Object.keys(api).sort(), ['verifyWorkspaceEnvironment', 'getWorkspaceOnlinePlan', 'prepareWorkspaceOnline', 'cancelWorkspaceOnlineConsent', 'getWorkspaceEnvironmentStatus', 'prepareWorkspaceEnvironment', 'cancelWorkspaceEnvironment', 'requestOrganizerFollowUp', 'continueAttentionTask', 'retryTaskExecution', 'cancelTaskExecution', 'startNextTaskExecution', 'cancelTeamPrompt', 'createTeamConversation', 'continueTeamPrompt', 'getConversationOrchestration', 'startTeamPrompt', 'subscribeToOrchestrationChanges'].sort());
     let calls = 0; const listener = () => calls++;
     const off = api.subscribeToOrchestrationChanges(listener), repeated = api.subscribeToOrchestrationChanges(listener); assert.equal(off, repeated);
     assert.equal(ipc.listenerCount(channels.changed), 1); ipc.emit(channels.changed, {}, { conversationId: 'c', view: {} }); assert.equal(calls, 1);
     off(); off(); assert.equal(ipc.listenerCount(channels.changed), 0); assert.deepEqual(sent, [[channels.subscribe, true], [channels.subscribe, false]]);
-    await api.getConversationOrchestration('c'); await api.startTeamPrompt({ message: 'request' }); await api.continueTeamPrompt({ runId: 'r', message: 'answer' });
-    assert.deepEqual(invoked.map(args => args[0]), [channels.get, channels.start, channels.continue]);
+    await api.requestOrganizerFollowUp({runId:'r'}); await api.continueAttentionTask({runId:'r'}); await api.getConversationOrchestration('c'); await api.startTeamPrompt({ message: 'request' }); await api.continueTeamPrompt({ runId: 'r', message: 'answer' });
+    assert.deepEqual(invoked.map(args => args[0]), [channels.followUp, channels.continueAttention, channels.get, channels.start, channels.continue]);
   });
   await t.test('startup recovery fails only stale planning and is idempotent with session preserved', async t => {
     let originals;
@@ -193,7 +193,7 @@ test('Main orchestration composition and IPC boundary', async t => {
     });
     const result = await f.invoke(channels.start, f.request);
     assert.equal(result.error.code, 'ORCHESTRATION_FAILED'); assert.equal(f.calls.length, 0);
-    assert.equal(f.ipc.handlers.size, 8); assert.ok(!JSON.stringify(result).includes('SECRET'));
+    assert.equal(f.ipc.handlers.size, 17); assert.ok(!JSON.stringify(result).includes('SECRET'));
   });
   await t.test('window closure during continuation lookup cannot start a late model turn', async t => {
     const f = await fixture(t); f.choose(ask); const first = await f.invoke(channels.start, f.request);

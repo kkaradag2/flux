@@ -4,9 +4,10 @@ import { JsonStore } from './JsonStore';
 import { storedAgent } from './validation';
 import { defaultAgents } from './defaults';
 import { ManagementError } from './ManagementError';
+import { migrateLeadInstructions } from './leadInstructions';
 export class JsonAgentRepository implements AgentRepository {
  private store: JsonStore<AgentDefinition>;
- constructor(file: string) { this.store = new JsonStore(file, storedAgent, defaultAgents); }
+ constructor(file: string) { this.store = new JsonStore(file, storedAgent, defaultAgents, migrateLeadInstructions); }
  list(): Promise<AgentDefinition[]> { return this.store.list(); }
  save(value: AgentDefinition, create: boolean): Promise<AgentDefinition> {
   return this.store.transaction(items => {

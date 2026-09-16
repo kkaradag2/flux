@@ -17,7 +17,7 @@ test('Orchestration aggregate persistence', async t => {
     await fs.rm(directory, { recursive: true, force: true });
   }
   t.after(() => remove(output));
-  for (const directory of ['shared', 'domain/orchestration', 'application/orchestration', 'main/orchestration', 'main/persistence']) {
+  for (const directory of ['shared', 'domain/orchestration', 'application/orchestration', 'application/orchestration/organizer', 'application/orchestration/execution', 'main/orchestration', 'main/persistence']) {
     await fs.mkdir(path.join(output, directory), { recursive: true });
     for (const file of await fs.readdir(path.join(root, 'apps/desktop/src', directory))) {
       if (!file.endsWith('.ts')) continue;

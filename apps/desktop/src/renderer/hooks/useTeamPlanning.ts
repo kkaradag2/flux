@@ -19,7 +19,7 @@ export function useTeamPlanning() {
     if (!alive.current || !acceptsPlanningChange(current.current, change)) return;
     latest.current = change.view; setView(change.view);
     if (change.view.conversation) retain(change.view.conversation);
-    if (stopRequested.current && change.view.run?.status === 'planning') void window.flux.cancelTeamPrompt({ runId: change.view.run.id });
+    if (stopRequested.current && change.view.run && (change.view.run?.status === 'planning' || change.view.followUp?.evaluating)) void window.flux.cancelTeamPrompt({ runId: change.view.run.id });
   }, [retain]);
   useEffect(() => {
     alive.current = true; const off = window.flux.subscribeToOrchestrationChanges(accept);
@@ -44,11 +44,21 @@ export function useTeamPlanning() {
     }).catch(() => { if (alive.current && ticket === generation.current) setError('Task execution could not finish. Partial work was preserved.'); })
       .finally(() => { if (alive.current && ticket === generation.current) pending.current = false; });
   }, [accept]);
+  const followUp = useCallback((continuation = false) => {
+    const run = latest.current?.run, detail = current.current;
+    if (!run || !detail || pending.current || !(continuation ? latest.current?.followUp?.canContinueTask : latest.current?.followUp?.canAsk)) return;
+    pending.current = true; stopRequested.current = false; setError(null); const ticket = generation.current;
+    void (continuation ? window.flux.continueAttentionTask({ runId: run.id }) : window.flux.requestOrganizerFollowUp({ runId: run.id })).then(result => {
+      if (!alive.current || ticket !== generation.current) return;
+      if (result.ok) accept({ conversationId: detail.id, view: result.value }); else setError(result.error.message);
+    }).catch(() => { if (alive.current && ticket === generation.current) setError(continuation ? 'Task continuation could not finish. Existing work was preserved.' : 'Organizer follow-up could not finish.'); })
+      .finally(() => { if (alive.current && ticket === generation.current) pending.current = false; });
+  }, [accept]);
   const stop = useCallback(() => {
     stopRequested.current = true;
     const run = latest.current?.run;
     if (run && (latest.current?.execution?.activeTaskId || latest.current?.execution?.checking)) { void window.flux.cancelTaskExecution({ runId: run.id }).then(result => { if (!result.ok && alive.current) setError('Task execution could not be stopped. Try Stop again.'); }).catch(() => { if (alive.current) setError('Task execution could not be stopped. Try Stop again.'); }); return; }
-    if (run?.status === 'planning') void window.flux.cancelTeamPrompt({ runId: run.id }).then(result => {
+    if (run && (run.status === 'planning' || latest.current?.followUp?.evaluating)) void window.flux.cancelTeamPrompt({ runId: run.id }).then(result => {
       if (!result.ok && alive.current) setError('Planning could not be stopped. Try Stop again.');
     }).catch(() => { if (alive.current) setError('Planning could not be stopped. Try Stop again.'); });
   }, []);
@@ -85,8 +95,8 @@ export function useTeamPlanning() {
     return true;
   }, [accept, retain]);
   const activeTask = view?.tasks.find(task => task.id === view.execution?.activeTaskId);
-  const running = !!activeTask || !!view?.execution?.checking || busy || view?.run?.status === 'planning';
+  const running = !!view?.followUp?.evaluating || !!activeTask || !!view?.execution?.checking || busy || view?.run?.status === 'planning';
   return { conversation, view, messages: conversation ? savedChatMessages(conversation) : [], running,
     workingAgentId: activeTask ? activeTask.assignee.id : view?.execution?.checking ? null : running ? view?.run?.organizerAgentId ?? conversation?.leadAgentId ?? null : null,
-    error, open, reset, send, stop, execute: () => execute(false), retry: () => execute(true) };
+    error, open, reset, send, stop, askOrganizer: () => followUp(false), continueAttention: () => followUp(true), execute: () => execute(false), retry: () => execute(true) };
 }

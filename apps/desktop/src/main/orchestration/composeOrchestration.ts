@@ -1,3 +1,10 @@
+import { WorkspaceEnvironmentRegistry } from '../../application/environment/WorkspaceEnvironmentProvider';
+import { WorkspaceEnvironmentService } from '../../application/environment/WorkspaceEnvironmentService';
+import { PnpmOfflineProvider } from '../environment/PnpmOfflineProvider';
+import { JsonWorkspaceEnvironmentStore } from '../environment/WorkspaceEnvironmentStore';
+import { registerWorkspaceEnvironmentIpc } from '../environment/registerWorkspaceEnvironmentIpc';
+import { TaskContinuationPreflight } from './TaskContinuationPreflight';
+import { OrganizerFollowUp } from '../../application/orchestration/organizer/OrganizerFollowUp';
 import { ConditionalRuntimeRetry, retryRuntimeIdentity } from './ConditionalRuntimeRetry';
 import { CodexRuntimePreflight } from '../app-server/CodexRuntimePreflight';
 import { RunWorkspaces } from './RunWorkspaces';
@@ -69,9 +76,25 @@ export async function composeOrchestration(options: {
   const coordinator = new TeamPromptCoordinator(source, repository, durableExecutor, values);
   const conditional = new ConditionalRuntimeRetry(workspaces, async () => ready() ? state().state : null, new CodexRuntimePreflight(selectedRuntime),
     async (id, value) => views.setChecking(await repository.rehydrate(id), value), result => { if (options.app.isPackaged === false) console.debug('[Flux retry preflight]', result); });
-  const tasks = new TaskExecutionCoordinator(repository, source, workspaces, new AgentTaskExecutor(router), values, conditional);
+  const tasks = new TaskExecutionCoordinator(repository, source, workspaces, new AgentTaskExecutor(router), values, conditional, new TaskContinuationPreflight(workspaces, async () => ready() ? state().state : null, new CodexRuntimePreflight(selectedRuntime), async (id, value) => views.setChecking(await repository.rehydrate(id), value)));
   try { await tasks.recover(); } catch { recovered = false; }
-  const service = new OrchestrationService(source, repository, coordinator, views, ready, () => recovered, journal, tasks);
+  const followUp = new OrganizerFollowUp(repository, source, router, workspaces, values);
+  try { await followUp.recover(); } catch { recovered = false; }
+  const service = new OrchestrationService(source, repository, coordinator, views, ready, () => recovered, journal, tasks, followUp);
+  const environmentStore = new JsonWorkspaceEnvironmentStore(path.join(options.app.getPath('userData'), 'workspace-environments'));
+  await environmentStore.recover();
+  const environment = new WorkspaceEnvironmentService(new WorkspaceEnvironmentRegistry([new PnpmOfflineProvider()]), environmentStore, async id => {
+    if (!recovered) throw new Error('Environment unavailable');
+    const snapshot = await repository.rehydrate(id), run = snapshot.state.run;
+    if (service.isRunBusy(id, run.conversationId) || run.status !== 'running' || !snapshot.state.tasks.some(task => task.status === 'needs_attention')
+      || snapshot.state.tasks.some(task => task.status === 'working') || snapshot.state.interventions?.some(item => item.status === 'pending')) throw new Error('Environment unavailable');
+    const project = await source.getProject(run.projectId), conversation = await source.getConversation(run.conversationId);
+    if (conversation.projectId !== run.projectId) throw new Error('Environment unavailable');
+    const workspace = await workspaces.verifyReady(run, conversation.branchName, project.path);
+    return { runId: id, workspaceId: run.id, directory: workspace.cwd };
+  });
+  service.environmentBusy = id => environment.busy(id);
+  const unregisterEnvironment = registerWorkspaceEnvironmentIpc(options.ipc, environment, options.trusted);
   const unregister = registerOrchestrationIpc(options.ipc, service, options.trusted);
-  return { service, shutdown: async () => { unregister(); await service.shutdown(); } };
+  return { service, shutdown: async () => { unregister(); await unregisterEnvironment(); await service.shutdown(); } };
 }

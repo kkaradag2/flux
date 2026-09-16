@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { ManagementError } from './ManagementError';
 export class JsonStore<T extends { id: string }> {
  private queue: Promise<unknown> = Promise.resolve();
- constructor(private file: string, private parse: (value: unknown) => T, private seed: () => T[]) {}
+ constructor(private file: string, private parse: (value: unknown) => T, private seed: () => T[], private migrate: (items: T[]) => T[] = items => items) {}
  private async read(): Promise<T[]> {
   let source: string;
   try { source = await readFile(this.file, 'utf8'); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw new ManagementError('READ_FAILED', 'Saved data could not be read.'); }
@@ -18,11 +18,11 @@ export class JsonStore<T extends { id: string }> {
   catch { await unlink(temp).catch(() => undefined); throw new ManagementError('WRITE_FAILED', 'Changes could not be saved. The previous data has been preserved.'); }
  }
  transaction<R>(action: (items: T[]) => Promise<{ items: T[]; result: R }> | { items: T[]; result: R }): Promise<R> {
-  const operation = this.queue.then(async () => { let items = await this.read(); if (!items.length) { items = this.seed(); await this.write(items); } const next = await action(items); await this.write(next.items); return next.result; });
+  const operation = this.queue.then(async () => { let items = await this.read(); if (!items.length) { items = this.seed(); await this.write(items); } const next = await action(this.migrate(items)); await this.write(next.items); return next.result; });
   this.queue = operation.catch(() => undefined); return operation;
  }
  list(): Promise<T[]> {
-  const operation = this.queue.then(async () => { let items = await this.read(); if (!items.length) { items = this.seed(); await this.write(items); } return items; });
+  const operation = this.queue.then(async () => { let items = await this.read(); if (!items.length) { items = this.seed(); await this.write(items); } const migrated = this.migrate(items); if (migrated !== items) await this.write(migrated); return migrated; });
   this.queue = operation.catch(() => undefined); return operation;
  }
 }

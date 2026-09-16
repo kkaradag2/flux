@@ -39,7 +39,7 @@ export class TeamConversationJournal {
     return this.serial(async () => {
       const run = snapshot.state.run, record = await this.store.get(run.conversationId);
       if (record.mode !== 'team') return;
-      record.status = run.status === 'planning' || snapshot.state.tasks.some(task => task.status === 'working') ? 'running' : run.status === 'failed' ? 'failed' : run.status === 'cancelled' ? 'cancelled' : 'completed';
+      record.status = snapshot.state.interventions?.some(item => item.status === 'pending') || run.status === 'planning' || snapshot.state.tasks.some(task => task.status === 'working') ? 'running' : run.status === 'failed' ? 'failed' : run.status === 'cancelled' ? 'cancelled' : 'completed';
       record.updatedAt = run.updatedAt;
       const recovery = snapshot.events.some(event => event.type === 'run.failed' && event.reason === 'PLANNING_INTERRUPTED');
       record.interrupted = recovery;
@@ -53,6 +53,16 @@ export class TeamConversationJournal {
         if (!record.messages.some(message => message.id === id)) record.messages.push({ id, role: 'system', agentId: null,
           content: recovery ? 'Planning was interrupted. Send the request again.' : run.status === 'cancelled' ? 'Planning stopped.' : 'Planning could not finish. Send the request again.',
           createdAt: run.updatedAt, status: run.status });
+      }
+      for (const item of snapshot.state.interventions ?? []) {
+        if (item.status === 'pending') continue;
+        const id = `${run.id}:intervention:${item.id}:${item.updatedAt}`;
+        if (record.messages.some(message => message.id === id)) continue;
+        // Only committed, applied decisions are shown as Organizer guidance.
+        if (item.status === 'applied' && item.decision) record.messages.push({ id, role: 'agent', agentId: run.organizerAgentId,
+          content: item.decision.message + (item.decision.type === 'ask_user' ? '\n\n' + item.decision.questions!.map(question => '- ' + question).join('\n') : ''), createdAt: item.updatedAt, status: 'completed' });
+        else if (item.status === 'failed' || item.status === 'cancelled') record.messages.push({ id, role: 'system', agentId: null,
+          content: item.status === 'cancelled' ? 'Organizer evaluation stopped. No automatic retry was started.' : 'Organizer evaluation could not finish. No automatic retry was started.', createdAt: item.updatedAt, status: item.status });
       }
       for (const task of snapshot.state.tasks) {
         const finished = [...snapshot.events].reverse().find(event => event.type === 'task.execution_recorded' && event.taskId === task.id);

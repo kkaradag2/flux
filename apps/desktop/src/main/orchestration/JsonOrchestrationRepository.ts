@@ -96,6 +96,7 @@ export class JsonOrchestrationRepository implements OrchestrationRepository {
       // The application calls the existing central domain API under the run lock.
       // No transition rules or clock live in this repository.
       const result = transition(rehydrated(current).state);
+      if (!result.events.length && same(result.state, rehydrated(current).state)) return rehydrated(current);
       return this.write(file, this.merge(current, result));
     });
   }

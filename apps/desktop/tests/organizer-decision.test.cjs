@@ -34,6 +34,14 @@ test('Organizer instruction and decision contract', async t => {
  const { parseOrganizerDecision: parse, validateOrganizerDecision: validate } = load('validateOrganizerDecision');
  const { OrganizerDecisionError } = load('OrganizerDecisionError');
  const { organizerDecisionSchema: schema, matchesOrganizerDecisionSchema } = load('organizerDecisionSchema');
+ await t.test('runtime coordination is domain neutral and optional gates stay optional', () => {
+  const instruction = buildOrganizerInstruction('PRIVATE_DOMAIN_EXPERTISE', { teamId: 't', teamName: 'Research', organizerAgentId: 'a', organizerAgentName: 'Curator', userRequest: 'Curate an exhibition', conversationId: 'c', projectId: 'p', projectName: 'Museum', branch: 'main', members: [] });
+  assert.ok(instruction.includes('PRIVATE_DOMAIN_EXPERTISE'));
+  assert.match(instruction, /Names are context, never fixed role rules/);
+  assert.match(instruction, /tasks are optional/);
+  assert.match(instruction, /final Organizer check is not mandatory/);
+  assert.doesNotMatch(instruction, /Developer|Tester|Reviewer|PASS/);
+ });
  const agents = [
   { id: 'a', name: 'Developer', description: 'Implements changes', runtime: { type: 'codex' }, enabled: true, instructionsMarkdown: 'USER INSTRUCTION: Follow project conventions.' },
   { id: 'b', name: 'Reviewer', description: 'Reviews changes', runtime: { type: 'codex' }, enabled: true, instructionsMarkdown: 'PRIVATE_REVIEWER_INSTRUCTION' },

@@ -4,13 +4,14 @@ export type RuntimeCapabilities = Readonly<{
  toolExecution: boolean; workingDirectory: boolean; sandboxing: boolean;
 }>;
 export type RuntimeTurnRequest = Readonly<{
+ continuation?: boolean;
  runtimeIdentity?: { sourceId: string; version: string };
  instructions: string; prompt: string; settings: RuntimeModelSettings; cwd: string;
  /** Awaited before model execution; callers can durably retain the session. */
  onExecutionStarted?: () => Promise<void>;
  onSession?: (session: AgentSessionReference) => Promise<void>;
  session?: AgentSessionReference; signal: AbortSignal;
- resultContract: 'organizer-decision' | 'task-execution';
+ resultContract: 'organizer-decision' | 'organizer-follow-up' | 'task-execution';
  policy: Readonly<{ readOnly: boolean; network: false; tools: boolean }>;
 }>;
 export type RuntimeTurnResult = Readonly<{ value: unknown; session: AgentSessionReference; durationMs: number }>;

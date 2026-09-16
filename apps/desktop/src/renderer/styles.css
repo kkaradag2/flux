@@ -506,6 +506,10 @@ svg { display: block; flex-shrink: 0; }
 .execution-plan > header { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .execution-plan > header span { color: var(--text-muted); font-size: 12px; }
 .execution-plan > p { margin: 12px 0; }
+.workspace-environment { border-top: 1px solid var(--border-subtle); margin-top: 12px; padding: 12px 0; font-size: 13px; }
+.workspace-environment p { color: var(--text-muted); }
+.environment-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border-subtle); border-top-color: var(--text-secondary); border-radius: 50%; animation: runtime-spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .environment-spinner { animation: none; } }
 .planning-activity { display: flex; gap: 8px; align-items: center; color: var(--text-muted); padding: 12px 0; font-size: 13px; }
 
 .execution-action { margin-top: 12px; padding: 7px 12px; border: 1px solid var(--border-composer); border-radius: 6px; background: var(--surface-context); color: var(--text-primary); cursor: pointer; }

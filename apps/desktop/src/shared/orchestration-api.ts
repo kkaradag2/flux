@@ -2,6 +2,7 @@ import type { ConversationDetail } from './conversation-api';
 export type OrchestrationRunStatus = 'planning' | 'running' | 'waiting_input' | 'completed' | 'failed' | 'cancelled';
 export type OrchestrationTaskStatus = import('./task-status').TaskStatus;
 export type ConversationOrchestrationView = {
+  followUp?: { evaluating: boolean; canAsk: boolean; canContinueTask: boolean; waitingInput: boolean; failed: boolean };
   conversation?: ConversationDetail;
   execution?: { checking?: boolean; canStart: boolean; activeTaskId: string | null; hasExecuted: boolean; retry?: { attempt: number; message: string } | null };
   run: { canContinue?: boolean; id: string; status: OrchestrationRunStatus; goal: string; organizerAgentId: string; organizerName: string; createdAt: string; updatedAt: string } | null;
@@ -15,6 +16,15 @@ export type TeamPromptResponse = { type: 'respond' | 'ask_user' | 'plan_created'
 export type OrchestrationErrorCode = 'PROJECT_NOT_FOUND' | 'CONVERSATION_NOT_FOUND' | 'CONVERSATION_PROJECT_MISMATCH' | 'BRANCH_NOT_FOUND' | 'TEAM_NOT_FOUND' | 'TEAM_NOT_RUNNABLE' | 'ORGANIZER_NOT_AVAILABLE' | 'RUNTIME_NOT_READY' | 'RUN_NOT_FOUND' | 'RUN_NOT_WAITING_INPUT' | 'ORCHESTRATION_BUSY' | 'ORCHESTRATION_FAILED' | 'EXECUTION_FAILED' | 'NO_READY_TASK' | 'OWNER_UNAVAILABLE' | 'EXECUTION_BUSY' | 'EXECUTION_INTERRUPTED' | 'UNSAFE_WORKTREE' | 'WORKTREE_PREPARATION_FAILED' | 'RETRY_NOT_ALLOWED' | 'RETRY_RUNTIME_CHANGED' | 'RETRY_DIRTY_WORKTREE' | 'RETRY_PREFLIGHT_FAILED';
 export type OrchestrationResponse<T> = { ok: true; value: T } | { ok: false; error: { code: OrchestrationErrorCode; message: string } };
 export interface OrchestrationApi {
+  verifyWorkspaceEnvironment(input: { runId: string }): Promise<{ ok: true; value: import('./workspace-environment').WorkspaceEnvironmentStatus } | { ok: false; code: import('./workspace-environment').WorkspaceEnvironmentCode }>;
+  getWorkspaceOnlinePlan(input: { runId: string }): Promise<{ ok: true; value: import('./workspace-environment').WorkspaceOnlineConsent } | { ok: false; code: import('./workspace-environment').WorkspaceEnvironmentCode }>;
+  prepareWorkspaceOnline(input: { runId: string; consentId: string }): Promise<{ ok: true; value: import('./workspace-environment').WorkspaceEnvironmentStatus } | { ok: false; code: import('./workspace-environment').WorkspaceEnvironmentCode }>;
+  cancelWorkspaceOnlineConsent(input: { runId: string; consentId: string }): Promise<{ ok: boolean }>;
+  getWorkspaceEnvironmentStatus(input: { runId: string }): Promise<{ ok: true; value: import('./workspace-environment').WorkspaceEnvironmentStatus } | { ok: false; code: import('./workspace-environment').WorkspaceEnvironmentCode }>;
+  prepareWorkspaceEnvironment(input: { runId: string }): Promise<{ ok: true; value: import('./workspace-environment').WorkspaceEnvironmentStatus } | { ok: false; code: import('./workspace-environment').WorkspaceEnvironmentCode }>;
+  cancelWorkspaceEnvironment(input: { runId: string }): Promise<{ ok: boolean }>;
+  requestOrganizerFollowUp(input: { runId: string }): Promise<OrchestrationResponse<ConversationOrchestrationView>>;
+  continueAttentionTask(input: { runId: string }): Promise<OrchestrationResponse<ConversationOrchestrationView>>;
   retryTaskExecution(input: { runId: string }): Promise<OrchestrationResponse<ConversationOrchestrationView>>;
   startNextTaskExecution(input: { runId: string }): Promise<OrchestrationResponse<ConversationOrchestrationView>>;
   cancelTaskExecution(input: { runId: string }): Promise<OrchestrationResponse<void>>;

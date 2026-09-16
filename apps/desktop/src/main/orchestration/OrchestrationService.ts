@@ -1,3 +1,4 @@
+import { currentIntervention, type OrganizerFollowUp } from '../../application/orchestration/organizer/OrganizerFollowUp';
 import type { TaskExecutionCoordinator } from '../../application/orchestration/execution/TaskExecutionCoordinator';
 import type { TeamConversationJournal } from './TeamConversationJournal';
 import type { TeamPromptCoordinator, TeamPromptResult } from '../../application/orchestration/TeamPromptCoordinator';
@@ -24,13 +25,15 @@ function continueRequest(value: unknown): ContinueTeamPromptRequest {
   const data = input(value, ['runId', 'message']); return { runId: text(data.runId, 200), message: text(data.message, 32000) };
 }
 export class OrchestrationService {
-  private executions = new Map<string, { owner: number; controller: AbortController; done: Promise<import('../../shared/orchestration-api').ConversationOrchestrationView> }>();
+  private executions = new Map<string, { kind?: 'followup'; owner: number; controller: AbortController; done: Promise<import('../../shared/orchestration-api').ConversationOrchestrationView> }>();
   private active = new Map<string, { owner: number; controller: AbortController; done: Promise<unknown> }>();
   private owners = new Map<number, { closed: boolean }>();
   private stopped = false;
+  environmentBusy: (id: string) => boolean = () => false;
+  isRunBusy(id: string, conversationId: string) { return this.executions.has(id) || this.active.has(conversationId); }
   constructor(private source: MainTeamPromptSource, private repository: OrchestrationRepository,
     private coordinator: Pick<TeamPromptCoordinator, 'start' | 'continueRun'>, private views: OrchestrationViews, private ready: () => boolean,
-    private available: () => boolean = () => true, private journal?: TeamConversationJournal, private tasks?: TaskExecutionCoordinator) {}
+    private available: () => boolean = () => true, private journal?: TeamConversationJournal, private tasks?: TaskExecutionCoordinator, private followUp?: OrganizerFollowUp) {}
   subscribe: OrchestrationViews['subscribe'] = listener => this.views.subscribe(listener);
   async get(conversationId: unknown) {
     if (!this.available()) throw new BoundaryError('ORCHESTRATION_FAILED');
@@ -77,7 +80,13 @@ export class OrchestrationService {
     const lifetime = this.lifetime(owner);
     let run;
     try { run = await this.repository.getRun(request.runId); } catch { throw new BoundaryError('RUN_NOT_FOUND'); }
+    if (this.environmentBusy(run.id)) throw new BoundaryError('ORCHESTRATION_BUSY');
     if (this.executions.has(run.id)) throw new BoundaryError('ORCHESTRATION_BUSY');
+    if (currentIntervention((await this.repository.rehydrate(run.id)).state)?.decision?.type === 'ask_user') {
+      if (lifetime.closed || this.stopped) throw new BoundaryError('ORCHESTRATION_FAILED');
+      const view = await this.requestFollowUp(owner, { runId: run.id }, request.message);
+      return { type: 'respond', runId: run.id, message: 'Organizer follow-up saved.', view };
+    }
     return this.exclusive(owner, run.conversationId, async signal => {
       if (!['waiting_input', 'completed', 'failed', 'cancelled'].includes(run.status)) throw new BoundaryError('RUN_NOT_WAITING_INPUT');
       await this.source.validate(run.conversationId, run.projectId);
@@ -97,14 +106,15 @@ export class OrchestrationService {
     const data = input(value, ['runId']); let run;
     try { run = await this.repository.getRun(text(data.runId, 200)); } catch { throw new BoundaryError('RUN_NOT_FOUND'); }
     const active = this.active.get(run.conversationId);
-    if (!active || run.status !== 'planning') return;
+    if (!active || run.status !== 'planning') { if (this.executions.get(run.id)?.kind === 'followup') await this.cancelExecution(owner, value); return; }
     if (active.owner !== owner) throw new BoundaryError('ORCHESTRATION_BUSY');
     active.controller.abort(); await active.done.catch(() => undefined);
   }
-  execute(owner: number, value: unknown, retry = false) {
+  execute(owner: number, value: unknown, retry = false, continuation = false) {
     const data = input(value, ['runId']), id = text(data.runId, 200), lifetime = this.lifetime(owner);
+    if (this.environmentBusy(id)) throw new BoundaryError('ORCHESTRATION_BUSY');
     const existing = this.executions.get(id);
-    if (existing) { if (existing.owner !== owner) throw new BoundaryError('EXECUTION_BUSY'); return existing.done; }
+    if (existing) { if (existing.owner !== owner || existing.kind === 'followup') throw new BoundaryError('EXECUTION_BUSY'); return existing.done; }
     if (this.stopped || lifetime.closed || !this.available() || !this.tasks) throw new BoundaryError('EXECUTION_FAILED');
     if (!this.ready()) throw new BoundaryError('RUNTIME_NOT_READY');
     const controller = new AbortController();
@@ -113,10 +123,30 @@ export class OrchestrationService {
       await this.source.validate(run.conversationId, run.projectId);
       await this.journal?.assertTeam(run.conversationId, run.teamId);
       if (this.active.has(run.conversationId)) throw new BoundaryError('ORCHESTRATION_BUSY');
-      await this.tasks!.execute(id, controller.signal, retry);
+      await this.tasks!.execute(id, controller.signal, retry, continuation);
       return this.views.project(await this.repository.rehydrate(id));
     }).finally(() => this.executions.delete(id));
     this.executions.set(id, { owner, controller, done }); return done;
+  }
+  requestFollowUp(owner: number, value: unknown, answer?: string) {
+    const data = input(value, ['runId']), id = text(data.runId, 200), lifetime = this.lifetime(owner);
+    if (this.environmentBusy(id)) throw new BoundaryError('ORCHESTRATION_BUSY');
+    const existing = this.executions.get(id);
+    if (existing) { if (existing.owner !== owner || existing.kind !== 'followup') throw new BoundaryError('ORCHESTRATION_BUSY'); return existing.done; }
+    if (this.stopped || lifetime.closed || !this.available() || !this.followUp) throw new BoundaryError('ORCHESTRATION_FAILED');
+    const controller = new AbortController();
+    const done = Promise.resolve().then(async () => {
+      const run = await this.repository.getRun(id);
+      if (this.active.has(run.conversationId)) throw new BoundaryError('ORCHESTRATION_BUSY');
+      await this.source.validate(run.conversationId, run.projectId);
+      await this.source.validateTeam(run.teamId);
+      await this.journal?.assertTeam(run.conversationId, run.teamId);
+      if (!this.ready()) throw new BoundaryError('RUNTIME_NOT_READY');
+      if (answer !== undefined) await this.journal?.user(run.conversationId, answer);
+      await this.followUp!.request(id, controller.signal, answer);
+      return this.views.project(await this.repository.rehydrate(id));
+    }).finally(() => this.executions.delete(id));
+    this.executions.set(id, { owner, controller, done, kind: 'followup' }); return done;
   }
   async cancelExecution(owner: number, value: unknown): Promise<void> {
     const data = input(value, ['runId']), active = this.executions.get(text(data.runId, 200));

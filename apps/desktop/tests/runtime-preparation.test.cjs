@@ -22,7 +22,7 @@ test('Codex 0.154.0 runtime preparation',async t=>{
   const root=path.dirname(cwd);await verifyManagedWorkingDirectory(cwd,root,cwd);
   for(const [input,expected,code] of [[base,base,'workspace_outside_managed_root'],[cwd,base,'workspace_identity_mismatch'],[path.join(root,'missing'),path.join(root,'missing'),'invalid_working_directory'],['relative','relative','invalid_working_directory']])await assert.rejects(verifyManagedWorkingDirectory(input,root,expected),e=>e.diagnostic.subcode===code);
  });
- function fixture(value=response(),fail=false){const calls=[],listeners=new Set();let closes=0;const wire={request:async(method,params)=>{calls.push({method,params});if(method==='initialize')return{userAgent:'fixture'};if(method==='mcpServerStatus/list')return{data:[],nextCursor:null};if(method==='thread/start'){if(fail)throw preparationError('thread_start_rejected',undefined,-32602);return value}throw Error('Unexpected method');},notify:async method=>{calls.push({method})},reply:async()=>{},close:async()=>{closes++;listeners.clear()},onNotification:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},onRequest:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},onFailure:fn=>{listeners.add(fn);return()=>listeners.delete(fn)}};
+ function fixture(value=response(),fail=false){const calls=[],listeners=new Set();let closes=0;const wire={request:async(method,params)=>{calls.push({method,params});if(method==='initialize')return{userAgent:'fixture'};if(method==='mcpServerStatus/list')return{data:[],nextCursor:null};if(method==='thread/start'||method==='thread/resume'){if(fail)throw preparationError('thread_start_rejected',undefined,-32602);return value}throw Error('Unexpected method');},notify:async method=>{calls.push({method})},reply:async()=>{},close:async()=>{closes++;listeners.clear()},onNotification:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},onRequest:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},onFailure:fn=>{listeners.add(fn);return()=>listeners.delete(fn)}};
  return {session:new CodexChatSession(async()=>wire,{outputSchema:{type:'object'},taskExecution:true}),calls,listeners,closes:()=>closes};}
  await t.test('preflight shares real preparation, creates ephemeral thread, never turns or saves sessions, cleans listeners',async()=>{
   const f=fixture(),stages=[],records={task:'failed',attempts:2,session:null},before=JSON.stringify(records);let callbacks=0;
@@ -48,6 +48,12 @@ test('Codex 0.154.0 runtime preparation',async t=>{
   for(const [resolve,code] of [[async()=>null,'installation_not_ready'],[async()=>({structuredOutput:false}),'unsupported_runtime_version'],[async()=>{throw Error('untrusted failure')},'unknown_validation_failure']]){
    const failed=await new CodexRuntimePreflight({resolve}).check(options);assert.equal(failed.passed,false);assert.equal(failed.diagnostic.subcode,code);assert.equal(failed.stages.at(-1),'Cleanup completed');assert.ok(!JSON.stringify(failed).includes('untrusted failure'));
   }
+ });
+
+ await t.test('continuation preflight resumes saved identity without instruction replacement, turn, start or persistence',async()=>{
+  const f=fixture();let saved=0;await f.session.preflight({cwd,threadId:'fixture-thread',preserveInstructions:true,instructions:'DO NOT REPEAT',runtime:{type:'codex',model:null,reasoningEffort:'default'},onThread:()=>saved++,onExecutionStarted:()=>saved++},new AbortController().signal,()=>{});
+  const resume=f.calls.find(call=>call.method==='thread/resume');assert.equal(resume.params.threadId,'fixture-thread');assert.equal(resume.params.excludeTurns,true);assert.ok(!('developerInstructions' in resume.params));assert.ok(!f.calls.some(call=>['thread/start','turn/start'].includes(call.method)));assert.equal(saved,0);assert.equal(f.listeners.size,0);
+  const wrong=fixture();await assert.rejects(wrong.session.preflight({cwd,threadId:'missing-session',preserveInstructions:true,instructions:'',runtime:{type:'codex',model:null,reasoningEffort:'default'}},new AbortController().signal,()=>{}));assert.ok(!wrong.calls.some(call=>call.method==='thread/start'||call.method==='turn/start'));
  });
 
 });

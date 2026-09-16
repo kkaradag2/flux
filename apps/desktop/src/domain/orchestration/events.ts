@@ -17,6 +17,8 @@ type TaskStatusEvent = {
 }[Exclude<AgentTaskStatus, 'planned' | 'working'>];
 
 export type OrchestrationEventPayload =
+  | Readonly<{ type: 'intervention.recorded'; agentId: string; interventionId: string }>
+
   | Readonly<{ type: 'run.organizer_session_set'; agentId: string; session: NonNullable<TeamRun['organizerSession']> }>
   | Readonly<{ type: 'run.created'; agentId: string; run: TeamRun }>
   | Readonly<{ type: 'run.status_changed'; agentId: string; from: TeamRunStatus; to: TeamRunStatus; reason: string | null }>

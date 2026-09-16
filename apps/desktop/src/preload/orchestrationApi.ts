@@ -5,6 +5,15 @@ import { orchestrationChannels as channels } from '../shared/orchestration-chann
 export function createOrchestrationApi(ipc: Pick<IpcRenderer, 'invoke' | 'send' | 'on' | 'removeListener'>): OrchestrationApi {
   const listeners = new Map<(change: OrchestrationChange) => void, () => void>();
   return {
+    verifyWorkspaceEnvironment: input => ipc.invoke('environment:verify', input),
+    getWorkspaceOnlinePlan: input => ipc.invoke('environment:online-plan', input),
+    prepareWorkspaceOnline: input => ipc.invoke('environment:online-prepare', input),
+    cancelWorkspaceOnlineConsent: input => ipc.invoke('environment:cancel-consent', input),
+    getWorkspaceEnvironmentStatus: input => ipc.invoke('environment:status', input),
+    prepareWorkspaceEnvironment: input => ipc.invoke('environment:prepare', input),
+    cancelWorkspaceEnvironment: input => ipc.invoke('environment:cancel', input),
+    requestOrganizerFollowUp: input => ipc.invoke(channels.followUp, input),
+    continueAttentionTask: input => ipc.invoke(channels.continueAttention, input),
     retryTaskExecution: input => ipc.invoke(channels.retryExecution, input),
     startNextTaskExecution: input => ipc.invoke(channels.execute, input),
     cancelTaskExecution: input => ipc.invoke(channels.cancelExecution, input),
