@@ -1,3 +1,8 @@
+import { ConditionalRuntimeRetry, retryRuntimeIdentity } from './ConditionalRuntimeRetry';
+import { CodexRuntimePreflight } from '../app-server/CodexRuntimePreflight';
+import { RunWorkspaces } from './RunWorkspaces';
+import { TaskExecutionCoordinator } from '../../application/orchestration/execution/TaskExecutionCoordinator';
+import { AgentTaskExecutor } from '../../application/orchestration/execution/AgentTaskExecutor';
 import { TeamConversationJournal } from './TeamConversationJournal';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -22,7 +27,7 @@ import { OrchestrationService } from './OrchestrationService';
 import { registerOrchestrationIpc } from './registerOrchestrationIpc';
 
 export async function composeOrchestration(options: {
-  app: { getPath(name: 'userData'): string }; ipc: Pick<IpcMain, 'handle' | 'removeHandler' | 'on' | 'removeListener'>; trusted: Set<number>;
+  app: { getPath(name: 'userData'): string; isPackaged?: boolean }; ipc: Pick<IpcMain, 'handle' | 'removeHandler' | 'on' | 'removeListener'>; trusted: Set<number>;
   projects: Pick<ProjectService, 'getProjects' | 'getGitBranches' | 'getSelectedProjectId'>; conversations: Pick<ConversationStore, 'get'> & Partial<Pick<ConversationStore, 'save'>>;
   agents: Pick<AgentService, 'getAgents'>; teams: Pick<TeamService, 'getTeam'>;
   runtime: Pick<CodexRuntimeStateService, 'snapshot'>; installations: Pick<CodexInstallationService, 'resolve'>;
@@ -30,11 +35,17 @@ export async function composeOrchestration(options: {
 }, runtimeSource?: CodexRuntimeSource) {
   const state = () => options.runtime.snapshot();
   const ready = () => { const snapshot = state(); return !snapshot.activity && snapshot.state.operationalStatus === 'READY' && snapshot.state.verificationStatus === 'passed'; };
-  const adapter = new CodexAgentRuntimeAdapter(runtimeSource ?? new VerifiedOrganizerRuntimeSource(options.installations, async () => ready() ? state().state : null));
+  const selectedRuntime = runtimeSource ?? new VerifiedOrganizerRuntimeSource(options.installations, async () => ready() ? state().state : null);
+  const adapter = new CodexAgentRuntimeAdapter(selectedRuntime, undefined, diagnostic => {
+    if (options.app.isPackaged === false) console.debug('[Flux runtime]', diagnostic);
+  });
   const router = new AgentRuntimeRouter([adapter]);
   const source = new MainTeamPromptSource(options.projects, options.conversations, options.teams, options.agents, options.app.getPath('userData'));
   const journal = options.conversations.save ? new TeamConversationJournal({ get: id => options.conversations.get(id), save: value => options.conversations.save!(value) }, source, options.agents) : undefined;
-  const views = new OrchestrationViews(options.agents, journal);
+  const workspaces = new RunWorkspaces(options.app.getPath('userData'));
+  const views = new OrchestrationViews(options.agents, journal, async run => workspaces.retryablePreparation(run, (await source.getProject(run.projectId)).path), (snapshot, task) => {
+    try { retryRuntimeIdentity(task, ready() ? state().state : null); return task.dependsOn.every(id => snapshot.state.tasks.find(task => task.id === id)?.status === 'completed'); } catch { return false; }
+  });
   const paths = (await options.projects.getProjects()).map(project => project.path);
   const repository = new ObservedOrchestrationRepository(createOrchestrationRepository(options.app,
     [options.projectRoot, ...paths, path.join(options.app.getPath('userData'), 'worktrees')]), async snapshot => { await journal?.sync(snapshot); await views.publish(snapshot); });
@@ -56,7 +67,11 @@ export async function composeOrchestration(options: {
     },
   };
   const coordinator = new TeamPromptCoordinator(source, repository, durableExecutor, values);
-  const service = new OrchestrationService(source, repository, coordinator, views, ready, () => recovered, journal);
+  const conditional = new ConditionalRuntimeRetry(workspaces, async () => ready() ? state().state : null, new CodexRuntimePreflight(selectedRuntime),
+    async (id, value) => views.setChecking(await repository.rehydrate(id), value), result => { if (options.app.isPackaged === false) console.debug('[Flux retry preflight]', result); });
+  const tasks = new TaskExecutionCoordinator(repository, source, workspaces, new AgentTaskExecutor(router), values, conditional);
+  try { await tasks.recover(); } catch { recovered = false; }
+  const service = new OrchestrationService(source, repository, coordinator, views, ready, () => recovered, journal, tasks);
   const unregister = registerOrchestrationIpc(options.ipc, service, options.trusted);
   return { service, shutdown: async () => { unregister(); await service.shutdown(); } };
 }

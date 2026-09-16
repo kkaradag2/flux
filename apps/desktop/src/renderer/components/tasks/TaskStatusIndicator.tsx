@@ -6,7 +6,7 @@ export function TaskStatusIndicator({ status }: { status: WorkspaceTaskStatus })
     {status === 'completed' ? <path d="m6 10 3 3 5-6" />
       : status === 'failed' || status === 'cancelled' ? <path d="m7 7 6 6m0-6-6 6" />
       : status === 'blocked' ? <path d="M6 10h8" />
-      : status === 'needs_review' ? <><path d="M10 6v5" /><circle cx="10" cy="14" r=".5" /></>
+      : status === 'needs_attention' ? <><path d="M10 6v5" /><circle cx="10" cy="14" r=".5" /></>
       : status === 'ready' ? <path d="m8 6 5 4-5 4Z" />
       : status === 'working' ? <circle cx="10" cy="10" r="2.5" fill="currentColor" stroke="none" /> : null}
   </svg>;

@@ -1,10 +1,11 @@
+import { migrateOrchestrationRecord, parseLegacyMetadata, type LegacyEventMetadata } from './orchestrationMigration';
 import { validateTaskGraph, type AgentTask, type AgentTaskStatus, type ExecutionPlan, type OrchestrationEvent, type OrchestrationState, type TeamRun, type TeamRunStatus } from '../../domain/orchestration';
 import { OrchestrationPersistenceError as PersistenceError } from '../../application/orchestration/OrchestrationPersistenceError';
 import type { RehydratedOrchestration } from '../../application/orchestration/OrchestrationRepository';
 
-export type OrchestrationRecord = Readonly<{ schemaVersion: 1; revision: number; run: TeamRun; plans: readonly ExecutionPlan[]; tasks: readonly AgentTask[]; events: readonly OrchestrationEvent[] }>;
+export type OrchestrationRecord = Readonly<{ schemaVersion: 2; legacyEventMetadata?: readonly LegacyEventMetadata[]; revision: number; run: TeamRun; plans: readonly ExecutionPlan[]; tasks: readonly AgentTask[]; events: readonly OrchestrationEvent[] }>;
 const runStatuses: readonly TeamRunStatus[] = ['planning', 'running', 'waiting_input', 'completed', 'failed', 'cancelled'];
-const taskStatuses: readonly AgentTaskStatus[] = ['planned', 'ready', 'working', 'blocked', 'needs_review', 'completed', 'failed', 'cancelled'];
+import { taskStatuses } from '../../shared/task-status';
 function check(condition: unknown): asserts condition { if (!condition) throw new PersistenceError('INVALID_RECORD'); }
 function object(value: unknown): Record<string, unknown> { check(value && typeof value === 'object' && !Array.isArray(value)); return value as Record<string, unknown>; }
 export function recordId(value: unknown): string { check(typeof value === 'string' && value.trim().length > 0 && !value.includes('\0')); return value; }
@@ -31,10 +32,21 @@ function run(value: unknown): TeamRun {
     organizerSession: nullable(data.organizerSession === undefined ? null : data.organizerSession, session),
     status: choice(data.status, runStatuses), createdAt: date(data.createdAt), updatedAt: date(data.updatedAt), completedAt: nullable(data.completedAt, date) };
 }
+function execution(value: unknown): NonNullable<AgentTask['execution']> {
+  const data = object(value); check(typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) && data.durationMs >= 0);
+  return { summary: recordId(data.summary), evidence: array(data.evidence, text), changedFiles: array(data.changedFiles, recordId), durationMs: data.durationMs, agentName: recordId(data.agentName) };
+}
+function attempt(value: unknown): import('../../domain/orchestration/models').TaskAttempt {
+  const data = object(value);
+  return { number: integer(data.number), status: choice(data.status, taskStatuses), phase: choice(data.phase, ['worktree_preparation','runtime_preparation','model_execution','unknown']),
+    failure: nullable(data.failure, value => choice(value, ['WORKTREE_PREPARATION_FAILED','RUNTIME_PREPARATION_FAILED','EXECUTION_INTERRUPTED','VALIDATION_FAILED','SECURITY_VIOLATION','RUNTIME_FAILED','UNKNOWN_FAILURE'])), startedAt: date(data.startedAt), finishedAt: nullable(data.finishedAt, date), ...(data.report ? { report: execution(data.report) } : {}) };
+}
 function task(value: unknown): AgentTask {
   const data = object(value);
-  return { id: recordId(data.id), runId: recordId(data.runId), title: recordId(data.title), description: recordId(data.description), assigneeAgentId: recordId(data.assigneeAgentId), delegatorAgentId: recordId(data.delegatorAgentId),
-    status: choice(data.status, taskStatuses), dependsOn: array(data.dependsOn, recordId), acceptanceCriteria: array(data.acceptanceCriteria, recordId), requiresReview: boolean(data.requiresReview), required: boolean(data.required),
+  const attempts = data.attempts === undefined ? undefined : array(data.attempts, attempt);
+  if (attempts) check(attempts.every((attempt, index) => attempt.number === index + 1));
+  return { ...(attempts ? { attempts } : {}), ...(data.session ? { session: session(data.session) } : {}), ...(data.execution ? { execution: execution(data.execution) } : {}), id: recordId(data.id), runId: recordId(data.runId), title: recordId(data.title), description: recordId(data.description), ownerAgentId: recordId(data.ownerAgentId), delegatorAgentId: recordId(data.delegatorAgentId),
+    status: choice(data.status, taskStatuses), dependsOn: array(data.dependsOn, recordId), acceptanceCriteria: array(data.acceptanceCriteria, recordId), required: boolean(data.required),
     createdAt: date(data.createdAt), updatedAt: date(data.updatedAt), startedAt: nullable(data.startedAt, date), completedAt: nullable(data.completedAt, date) };
 }
 function plan(value: unknown): ExecutionPlan {
@@ -54,14 +66,17 @@ function event(value: unknown): OrchestrationEvent {
     case 'plan.revised': return { ...common, type, previousVersion: integer(data.previousVersion), plan: plan(data.plan) };
     case 'task.created': return { ...common, type, taskId: recordId(data.taskId), delegatorAgentId: recordId(data.delegatorAgentId), task: task(data.task) };
     case 'task.assigned': return { ...common, type, taskId: recordId(data.taskId), previousAgentId: nullable(data.previousAgentId, recordId) };
+    case 'task.execution_phase_changed': return { ...common, type, taskId: recordId(data.taskId), phase: choice(data.phase, ['worktree_preparation','runtime_preparation','model_execution','unknown']) };
+    case 'task.session_set': return { ...common, type, taskId: recordId(data.taskId), session: session(data.session) };
+    case 'task.execution_recorded': return { ...common, type, taskId: recordId(data.taskId), report: execution(data.report) };
     case 'task.started': return { ...common, type, taskId: recordId(data.taskId), from: choice(data.from, ['ready']), status: choice(data.status, ['working']) };
     case 'task.dependencies_changed': return { ...common, type, taskId: recordId(data.taskId), from: choice(data.from, taskStatuses), status: choice(data.status, taskStatuses), dependsOn: array(data.dependsOn, recordId) };
-    case 'task.ready': case 'task.blocked': case 'task.needs_review': case 'task.completed': case 'task.failed': case 'task.cancelled': {
+    case 'task.ready': case 'task.blocked': case 'task.needs_attention': case 'task.completed': case 'task.failed': case 'task.cancelled': {
       const fields = { ...common, taskId: recordId(data.taskId), from: choice(data.from, taskStatuses), reason: nullable(data.reason, text) };
       switch (type) {
         case 'task.ready': return { ...fields, type, status: choice(data.status, ['ready']) };
         case 'task.blocked': return { ...fields, type, status: choice(data.status, ['blocked']) };
-        case 'task.needs_review': return { ...fields, type, status: choice(data.status, ['needs_review']) };
+        case 'task.needs_attention': return { ...fields, type, status: choice(data.status, ['needs_attention']) };
         case 'task.completed': return { ...fields, type, status: choice(data.status, ['completed']) };
         case 'task.failed': return { ...fields, type, status: choice(data.status, ['failed']) };
         case 'task.cancelled': return { ...fields, type, status: choice(data.status, ['cancelled']) };
@@ -72,9 +87,10 @@ function event(value: unknown): OrchestrationEvent {
 }
 export function planKey(value: ExecutionPlan): string { return JSON.stringify([value.runId, value.id, value.version]); }
 export function parseOrchestrationRecord(value: unknown): OrchestrationRecord {
-  const data = object(value);
-  if (data.schemaVersion !== 1) throw new PersistenceError('UNSUPPORTED_SCHEMA');
-  const result: OrchestrationRecord = { schemaVersion: 1, revision: integer(data.revision), run: run(data.run), plans: array(data.plans, plan), tasks: array(data.tasks, task), events: array(data.events, event) };
+  const data = object(migrateOrchestrationRecord(value));
+  if (data.schemaVersion !== 2) throw new PersistenceError('UNSUPPORTED_SCHEMA');
+  const metadata = parseLegacyMetadata(data.legacyEventMetadata);
+  const result: OrchestrationRecord = { schemaVersion: 2, ...(metadata.length ? { legacyEventMetadata: metadata } : {}), revision: integer(data.revision), run: run(data.run), plans: array(data.plans, plan), tasks: array(data.tasks, task), events: array(data.events, event) };
   if (new Set(result.events.map(event => event.id)).size !== result.events.length) throw new PersistenceError('DUPLICATE_EVENT');
   if (new Set(result.plans.map(plan => plan.version)).size !== result.plans.length) throw new PersistenceError('DUPLICATE_PLAN_VERSION');
   const id = result.run.id, tasks = new Set(result.tasks.map(task => task.id));
@@ -87,7 +103,7 @@ export function parseOrchestrationRecord(value: unknown): OrchestrationRecord {
     check(event.runId === id);
     if ('taskId' in event) check(tasks.has(event.taskId));
     if (event.type === 'run.created') check(event.run.id === id && event.run.conversationId === result.run.conversationId && event.run.organizerAgentId === event.agentId);
-    if (event.type === 'task.created') check(event.task.id === event.taskId && event.task.runId === id && event.task.assigneeAgentId === event.agentId && event.task.delegatorAgentId === event.delegatorAgentId);
+    if (event.type === 'task.created') check(event.task.id === event.taskId && event.task.runId === id && event.task.ownerAgentId === event.agentId && event.task.delegatorAgentId === event.delegatorAgentId);
     if (event.type === 'plan.created' || event.type === 'plan.revised') check(event.plan.runId === id && event.plan.createdByAgentId === event.agentId && result.plans.some(plan => planKey(plan) === planKey(event.plan) && JSON.stringify(plan) === JSON.stringify(event.plan)));
   }
   for (const plan of result.plans) check(result.events.some(event => (event.type === 'plan.created' || event.type === 'plan.revised') && planKey(event.plan) === planKey(plan)));

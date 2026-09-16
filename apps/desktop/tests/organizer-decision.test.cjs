@@ -42,7 +42,7 @@ test('Organizer instruction and decision contract', async t => {
  const team = { id: 'team', name: 'Example team', organizerAgentId: 'a', agentIds: ['a', 'b', 'c'] };
  const request = { userRequest: 'Implement a search form', conversationId: 'conversation', projectId: 'project', projectName: 'Flux', branch: 'feature/example' };
  const context = createOrganizerRuntimeContext(team, agents, request);
- const task = (key = 'build', extra = {}) => ({ key, title: 'Build search', description: 'Add the search form', assigneeAgentId: 'a', dependsOn: [], acceptanceCriteria: ['Search returns matching results'], requiresReview: true, ...extra });
+ const task = (key = 'build', extra = {}) => ({ key, title: 'Build search', description: 'Add the search form', ownerAgentId: 'a', dependsOn: [], acceptanceCriteria: ['Search returns matching results'], ...extra });
  const plan = tasks => ({ type: 'create_plan', message: 'Here is the plan.', planSummary: 'Implement and verify search.', tasks: tasks ?? [task()] });
  const valid = [{ type: 'respond', message: 'This is the answer.' }, { type: 'ask_user', message: 'Please clarify.', questions: ['Which data source?'] }, plan()];
  const rejects = (value, code) => assert.throws(() => parse(typeof value === 'string' ? value : JSON.stringify(value), context), error => error instanceof OrganizerDecisionError && (!code || error.code === code));
@@ -52,7 +52,7 @@ test('Organizer instruction and decision contract', async t => {
   const instruction = buildOrganizerInstruction(agents[0].instructionsMarkdown, { ...context, unrelatedSecret: 'CONTEXT_SECRET', members: context.members.map(member => ({ ...member, instructionsMarkdown: 'MEMBER_SECRET' })) });
   assert.ok(instruction.includes(agents[0].instructionsMarkdown));
   assert.ok(instruction.includes('Flux Organizer runtime contract'));
-  for (const member of context.members) for (const field of ['id', 'name', 'description', 'runtime', 'enabled']) assert.ok(instruction.includes(JSON.stringify(member[field])));
+  for (const member of context.members) for (const field of ['id', 'name', 'description', 'enabled']) assert.ok(instruction.includes(JSON.stringify(member[field])));
   for (const secret of ['PRIVATE_REVIEWER_INSTRUCTION', 'PRIVATE_TESTER_INSTRUCTION', 'CONTEXT_SECRET', 'MEMBER_SECRET']) assert.ok(!instruction.includes(secret));
   assert.equal(JSON.stringify({ agents, team, request }), before);
   for (const rule of ['respond', 'ask_user', '1–3', 'exactly one owner', 'agent IDs', 'enabled', 'description', 'parallel', 'dependencies', 'over-fragment', 'fake tasks', 'yourself', 'overall work completed', 'only one JSON']) assert.ok(instruction.includes(rule), rule);
@@ -76,10 +76,10 @@ test('Organizer instruction and decision contract', async t => {
   rejects({ ...valid[0], tasks: [] }); rejects({ ...valid[1], tasks: [] });
  });
  await t.test('unknown/disabled agents and multiple owners rejected; enabled self assignment allowed', () => {
-  for (const assigneeAgentId of ['outsider', 'c']) rejects(plan([task('a', { assigneeAgentId })]), 'INVALID_ASSIGNEE');
-  rejects(plan([task('a', { assigneeAgentId: ['a', 'b'] })]));
+  for (const ownerAgentId of ['outsider', 'c']) rejects(plan([task('a', { ownerAgentId })]), 'INVALID_ASSIGNEE');
+  rejects(plan([task('a', { ownerAgentId: ['a', 'b'] })]));
   rejects(plan([task('a', { owners: ['a', 'b'] })]));
-  assert.equal(validate(plan(), context).tasks[0].assigneeAgentId, context.organizerAgentId);
+  assert.equal(validate(plan(), context).tasks[0].ownerAgentId, context.organizerAgentId);
  });
  await t.test('duplicate keys, missing/self/duplicate/circular dependencies use domain graph validation', () => {
   for (const tasks of [[task(), task()], [task('a', { dependsOn: ['missing'] })], [task('a', { dependsOn: ['a'] })], [task('a', { dependsOn: ['b'] }), task('b', { dependsOn: ['a'] })]]) rejects(plan(tasks), 'INVALID_DEPENDENCIES');
@@ -91,7 +91,7 @@ test('Organizer instruction and decision contract', async t => {
  await t.test('nonempty fields, criteria, local key format and task limits', () => {
   rejects(plan([])); rejects(plan(Array.from({ length: 51 }, (_, i) => task('task-' + i))));
   assert.equal(validate(plan(Array.from({ length: 50 }, (_, i) => task('task-' + i))), context).tasks.length, 50);
-  for (const change of [{ title: '' }, { description: ' \n' }, { key: 'key with spaces' }, { key: 'x'.repeat(49) }, { acceptanceCriteria: ['x', 'x'] }, { acceptanceCriteria: [' '] }, { acceptanceCriteria: [] }, { requiresReview: 'true' }]) rejects(plan([task('a', change)]));
+  for (const change of [{ title: '' }, { description: ' \n' }, { key: 'key with spaces' }, { key: 'x'.repeat(49) }, { acceptanceCriteria: ['x', 'x'] }, { acceptanceCriteria: [' '] }, { acceptanceCriteria: [] }, { acceptanceCriteria: ['x'.repeat(501)] }, { acceptanceCriteria: Array.from({length:13},(_,i)=>String(i)) }, { requiresReview: 'true' }]) rejects(plan([task('a', change)]));
   rejects({ ...plan(), message: ' ' }); rejects({ ...plan(), planSummary: '' });
  });
  await t.test('missing and extra fields rejected at every union branch and task level', () => {
@@ -116,8 +116,8 @@ test('Organizer instruction and decision contract', async t => {
    assert.equal(actual, expected);
   }
   // Membership/cycles cannot be represented by this static structural schema.
-  assert.equal(schemaAccepts(schema, plan([task('x', { assigneeAgentId: 'outsider' })])), true);
-  rejects(plan([task('x', { assigneeAgentId: 'outsider' })]), 'INVALID_ASSIGNEE');
+  assert.equal(schemaAccepts(schema, plan([task('x', { ownerAgentId: 'outsider' })])), true);
+  rejects(plan([task('x', { ownerAgentId: 'outsider' })]), 'INVALID_ASSIGNEE');
   function inspect(node) {
    if (node.type === 'object') { assert.equal(node.additionalProperties, false); assert.deepEqual([...node.required].sort(), Object.keys(node.properties).sort()); Object.values(node.properties).forEach(inspect); }
    if (node.items) inspect(node.items);

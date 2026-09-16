@@ -11,9 +11,9 @@ function object<T>(properties: { [K in keyof T]-?: DecisionSchema }): DecisionSc
 }
 const text: DecisionSchema = { type: 'string', pattern: '\\S' };
 const key: DecisionSchema = { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$', maxLength: 48 };
-const task = object<OrganizerPlanTask>({ key, title: text, description: text, assigneeAgentId: text,
+const task = object<OrganizerPlanTask>({ key, title: text, description: text, ownerAgentId: text,
   dependsOn: { type: 'array', items: key, maxItems: 49, uniqueItems: true },
-  acceptanceCriteria: { type: 'array', items: text, minItems: 1, uniqueItems: true }, requiresReview: { type: 'boolean' } });
+  acceptanceCriteria: { type: 'array', items: { type: 'string', pattern: '\\S', maxLength: 500 }, minItems: 1, maxItems: 12, uniqueItems: true } });
 
 function freeze<T>(value: T): T {
   if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }

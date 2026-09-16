@@ -22,7 +22,7 @@ test('Task orchestration domain', async t => {
   const { createTeamRun, applyOrchestrationCommand: apply, OrchestrationError, validateTaskGraph } = require(path.join(output, 'index.js'));
   const runInput = { id: 'run', conversationId: 'conversation', projectId: 'project', teamId: 'team', organizerAgentId: 'lead', goal: 'Deliver the request' };
   const fixedDecision = { id: 'decision', agentId: 'lead', occurredAt: '2026-09-15T12:00:00.000Z' };
-  const taskInput = (id, overrides = {}) => ({ id, title: id, description: 'Implement ' + id, assigneeAgentId: 'developer', dependsOn: [], acceptanceCriteria: ['Acceptance criteria pass'], requiresReview: false, ...overrides });
+  const taskInput = (id, overrides = {}) => ({ id, title: id, description: 'Implement ' + id, ownerAgentId: 'developer', dependsOn: [], acceptanceCriteria: ['Acceptance criteria pass'], ...overrides });
   const throws = (operation, code) => assert.throws(operation, error => error instanceof OrchestrationError && error.code === code);
   function fixture(tasks = []) {
     let tick = 0;
@@ -40,7 +40,7 @@ test('Task orchestration domain', async t => {
 
   await t.test('dependency-free task becomes ready with one assignee, a delegator and ordered typed events', () => {
     const f = fixture([taskInput('build')]); const task = f.task('build');
-    assert.equal(task.status, 'ready'); assert.equal(task.assigneeAgentId, 'developer'); assert.equal(task.delegatorAgentId, 'lead');
+    assert.equal(task.status, 'ready'); assert.equal(task.ownerAgentId, 'developer'); assert.equal(task.delegatorAgentId, 'lead');
     assert.equal(task.required, true); assert.equal(task.startedAt, null); assert.equal(task.completedAt, null);
     assert.deepEqual(f.events.map(event => event.type), ['run.created', 'task.created', 'task.ready']);
     assert.equal(f.events[1].task.status, 'planned'); assert.equal(f.events[2].taskId, 'build'); assert.equal(f.events[2].agentId, 'developer');
@@ -102,8 +102,8 @@ test('Task orchestration domain', async t => {
     for (const status of ['completed', 'cancelled']) {
       const f = fixture([taskInput('one')]); f.running(); f.transition('one', 'working'); f.transition('one', status, 'Final outcome');
       assert.ok(f.task('one').completedAt);
-      for (const next of ['planned', 'ready', 'working', 'blocked', 'needs_review', 'completed', 'failed', 'cancelled']) throws(() => f.transition('one', next, 'Retry'), 'TERMINAL_TASK');
-      throws(() => f.command({ type: 'task.assign', taskId: 'one', assigneeAgentId: 'reviewer' }), 'TERMINAL_TASK');
+      for (const next of ['planned', 'ready', 'working', 'blocked', 'needs_attention', 'completed', 'failed', 'cancelled']) throws(() => f.transition('one', next, 'Retry'), 'TERMINAL_TASK');
+      throws(() => f.command({ type: 'task.assign', taskId: 'one', ownerAgentId: 'reviewer' }), 'TERMINAL_TASK');
       throws(() => f.command({ type: 'task.set_dependencies', taskId: 'one', dependsOn: [] }), 'TERMINAL_TASK');
     }
   });
@@ -116,12 +116,11 @@ test('Task orchestration domain', async t => {
     throws(() => f.transition('two', 'ready', 'Unblock', 'stranger'), 'ACTOR_NOT_AUTHORIZED');
     f.transition('two', 'ready', 'Dependency resolved'); f.transition('two', 'working');
   });
-  await t.test('review-required work cannot skip review or treat needs_review as working', () => {
-    const f = fixture([taskInput('one', { requiresReview: true })]); f.running(); f.transition('one', 'working');
-    throws(() => f.transition('one', 'completed'), 'REVIEW_REQUIRED'); f.transition('one', 'needs_review');
+  await t.test('needs_attention requires an explicit decision before work resumes', () => {
+    const f = fixture([taskInput('one', {})]); f.running(); f.transition('one', 'working');
+    f.transition('one', 'needs_attention');
     throws(() => f.transition('one', 'working'), 'INVALID_TASK_TRANSITION');
-    throws(() => f.command({ type: 'task.assign', taskId: 'one', assigneeAgentId: 'other' }), 'INVALID_ASSIGNMENT');
-    f.transition('one', 'ready', 'Review requested rework'); f.transition('one', 'working'); f.transition('one', 'needs_review'); f.transition('one', 'completed');
+    f.transition('one', 'ready', 'Review requested rework'); f.transition('one', 'working'); f.transition('one', 'needs_attention'); f.transition('one', 'completed');
   });
   await t.test('failed task retry is explicit and clears the previous completion time', () => {
     const f = fixture([taskInput('one')]); f.running(); f.transition('one', 'working'); const start = f.task('one').startedAt;
@@ -130,20 +129,20 @@ test('Task orchestration domain', async t => {
     assert.equal(f.task('one').completedAt, null); f.transition('one', 'working'); assert.equal(f.task('one').startedAt, start);
   });
   await t.test('review pending cannot release a dependent task; approval releases it once', () => {
-    const f = fixture([taskInput('reviewed', { requiresReview: true }), taskInput('next', { dependsOn: ['reviewed'] })]);
-    f.running(); f.transition('reviewed', 'working'); f.transition('reviewed', 'needs_review');
+    const f = fixture([taskInput('reviewed', {}), taskInput('next', { dependsOn: ['reviewed'] })]);
+    f.running(); f.transition('reviewed', 'working'); f.transition('reviewed', 'needs_attention');
     assert.equal(f.task('next').status, 'planned'); throws(() => f.transition('next', 'ready'), 'DEPENDENCIES_NOT_COMPLETED');
     f.transition('reviewed', 'completed');
     assert.equal(f.events.filter(event => event.type === 'task.ready' && event.taskId === 'next').length, 1);
   });
   await t.test('single-agent reassignment is audited and delegator is not changed', () => {
     const f = fixture([taskInput('one')]);
-    throws(() => f.command({ type: 'task.assign', taskId: 'one', assigneeAgentId: ['developer', 'tester'] }), 'INVALID_INPUT');
-    const result = f.command({ type: 'task.assign', taskId: 'one', assigneeAgentId: 'tester' });
-    assert.equal(f.task('one').assigneeAgentId, 'tester'); assert.equal(f.task('one').delegatorAgentId, 'lead');
+    throws(() => f.command({ type: 'task.assign', taskId: 'one', ownerAgentId: ['developer', 'tester'] }), 'INVALID_INPUT');
+    const result = f.command({ type: 'task.assign', taskId: 'one', ownerAgentId: 'tester' });
+    assert.equal(f.task('one').ownerAgentId, 'tester'); assert.equal(f.task('one').delegatorAgentId, 'lead');
     assert.equal(result.events[0].type, 'task.assigned'); assert.equal(result.events[0].previousAgentId, 'developer'); assert.equal(result.events[0].agentId, 'tester');
     f.running(); f.transition('one', 'working', undefined, 'tester');
-    throws(() => f.command({ type: 'task.assign', taskId: 'one', assigneeAgentId: 'lead' }), 'INVALID_ASSIGNMENT');
+    throws(() => f.command({ type: 'task.assign', taskId: 'one', ownerAgentId: 'lead' }), 'INVALID_ASSIGNMENT');
   });
   await t.test('Organizer alone completes the run, after all required tasks, never automatically', () => {
     const f = fixture([taskInput('one')]); f.running();
@@ -205,7 +204,7 @@ test('Task orchestration domain', async t => {
   });
   await t.test('invalid scalar assignments, missing delegator identity, time reversal and unknown commands fail typed', () => {
     const f = fixture();
-    for (const assigneeAgentId of ['', ' ', null, ['one', 'two']]) throws(() => f.command({ type: 'tasks.create', tasks: [taskInput('one', { assigneeAgentId })] }), 'INVALID_INPUT');
+    for (const ownerAgentId of ['', ' ', null, ['one', 'two']]) throws(() => f.command({ type: 'tasks.create', tasks: [taskInput('one', { ownerAgentId })] }), 'INVALID_INPUT');
     throws(() => apply(f.state, { type: 'tasks.create', tasks: [taskInput('one')] }, { ...fixedDecision, agentId: '' }), 'INVALID_INPUT');
     throws(() => apply(f.state, { type: 'run.transition', status: 'running' }, fixedDecision), 'TIME_ORDER');
     throws(() => f.command({ type: 'unknown' }), 'INVALID_INPUT');
@@ -213,14 +212,14 @@ test('Task orchestration domain', async t => {
     throws(() => createTeamRun({ ...runInput, organizerAgentId: 'other' }, fixedDecision), 'ORGANIZER_REQUIRED');
   });
   await t.test('all requested event variants carry their common and agent/task payloads', () => {
-    const f = fixture([taskInput('one', { requiresReview: true })]);
+    const f = fixture([taskInput('one', {})]);
     f.command({ type: 'plan.create', id: 'plan', summary: 'Plan', taskIds: ['one'] });
     f.command({ type: 'plan.revise', summary: 'Revision', taskIds: ['one'] });
-    f.command({ type: 'task.assign', taskId: 'one', assigneeAgentId: 'tester' }); f.running();
+    f.command({ type: 'task.assign', taskId: 'one', ownerAgentId: 'tester' }); f.running();
     f.transition('one', 'working', undefined, 'tester'); f.transition('one', 'blocked', 'Need input');
     f.transition('one', 'ready', 'Input provided'); f.transition('one', 'working', undefined, 'tester');
     f.transition('one', 'failed', 'Test failed'); f.transition('one', 'ready', 'Retry approved');
-    f.transition('one', 'working', undefined, 'tester'); f.transition('one', 'needs_review'); f.transition('one', 'completed');
+    f.transition('one', 'working', undefined, 'tester'); f.transition('one', 'needs_attention'); f.transition('one', 'completed');
     f.command({ type: 'run.transition', status: 'completed' });
     const events = [...f.events];
     for (const status of ['failed', 'cancelled']) {
@@ -228,7 +227,7 @@ test('Task orchestration domain', async t => {
     }
     assert.deepEqual([...new Set(events.map(event => event.type))].sort(), [
       'run.created', 'run.status_changed', 'plan.created', 'plan.revised', 'task.created', 'task.ready', 'task.assigned',
-      'task.started', 'task.blocked', 'task.needs_review', 'task.completed', 'task.failed', 'task.cancelled', 'run.completed', 'run.failed', 'run.cancelled',
+      'task.started', 'task.blocked', 'task.needs_attention', 'task.completed', 'task.failed', 'task.cancelled', 'run.completed', 'run.failed', 'run.cancelled',
     ].sort());
     for (const event of events) {
       assert.equal(typeof event.id, 'string'); assert.equal(event.runId, 'run'); assert.ok(Number.isFinite(Date.parse(event.occurredAt)));

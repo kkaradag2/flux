@@ -1,3 +1,4 @@
+import { executionAttempts, retryableTask } from './taskAttempts';
 import type {
   AgentTask, AgentTaskInput, AgentTaskStatus, ExecutionPlan, OrchestrationCommand,
   OrchestrationDecision, OrchestrationState, TeamRunInput, TeamRunStatus,
@@ -9,9 +10,9 @@ import { dependenciesCompleted, validateTaskGraph } from './taskGraph';
 const taskTransitions: Readonly<Record<AgentTaskStatus, readonly AgentTaskStatus[]>> = {
   planned: ['ready', 'blocked', 'cancelled'],
   ready: ['working', 'blocked', 'cancelled'],
-  working: ['blocked', 'needs_review', 'completed', 'failed', 'cancelled'],
+  working: ['blocked', 'needs_attention', 'completed', 'failed', 'cancelled'],
   blocked: ['ready', 'failed', 'cancelled'],
-  needs_review: ['ready', 'blocked', 'completed', 'failed', 'cancelled'],
+  needs_attention: ['ready', 'blocked', 'completed', 'failed', 'cancelled'],
   failed: ['ready', 'cancelled'],
   completed: [], cancelled: [],
 };
@@ -65,12 +66,12 @@ function eventCollector(runId: string, decision: OrchestrationDecision) {
 type Emit = ReturnType<typeof eventCollector>['emit'];
 
 function statusEvent(task: AgentTask, from: AgentTaskStatus, reason: string | null, emit: Emit): void {
-  const fields = { taskId: task.id, agentId: task.assigneeAgentId, from, reason };
+  const fields = { taskId: task.id, agentId: task.ownerAgentId, from, reason };
   switch (task.status) {
     case 'ready': emit({ ...fields, type: 'task.ready', status: 'ready' }); break;
-    case 'working': emit({ taskId: task.id, agentId: task.assigneeAgentId, type: 'task.started', from: 'ready', status: 'working' }); break;
+    case 'working': emit({ taskId: task.id, agentId: task.ownerAgentId, type: 'task.started', from: 'ready', status: 'working' }); break;
     case 'blocked': emit({ ...fields, type: 'task.blocked', status: 'blocked' }); break;
-    case 'needs_review': emit({ ...fields, type: 'task.needs_review', status: 'needs_review' }); break;
+    case 'needs_attention': emit({ ...fields, type: 'task.needs_attention', status: 'needs_attention' }); break;
     case 'completed': emit({ ...fields, type: 'task.completed', status: 'completed' }); break;
     case 'failed': emit({ ...fields, type: 'task.failed', status: 'failed' }); break;
     case 'cancelled': emit({ ...fields, type: 'task.cancelled', status: 'cancelled' }); break;
@@ -86,14 +87,13 @@ function promoteReady(state: OrchestrationState, at: string, emit: Emit): Orches
   }) };
 }
 function createTask(input: AgentTaskInput, runId: string, decision: OrchestrationDecision): AgentTask {
-  for (const [field, value] of Object.entries({ id: input.id, title: input.title, description: input.description, assigneeAgentId: input.assigneeAgentId })) nonEmpty(value, field);
+  for (const [field, value] of Object.entries({ id: input.id, title: input.title, description: input.description, ownerAgentId: input.ownerAgentId })) nonEmpty(value, field);
   invariant(Array.isArray(input.dependsOn) && Array.isArray(input.acceptanceCriteria), 'INVALID_INPUT', 'Task dependencies and acceptance criteria must be arrays.');
   input.acceptanceCriteria.forEach(value => nonEmpty(value, 'Acceptance criterion'));
-  invariant(typeof input.requiresReview === 'boolean' && (input.required === undefined || typeof input.required === 'boolean'), 'INVALID_INPUT', 'Task requirement flags must be boolean.');
+  invariant((input.required === undefined || typeof input.required === 'boolean'), 'INVALID_INPUT', 'Task requirement flags must be boolean.');
   return {
-    id: input.id, runId, title: input.title, description: input.description, assigneeAgentId: input.assigneeAgentId,
-    delegatorAgentId: decision.agentId, dependsOn: [...input.dependsOn], acceptanceCriteria: [...input.acceptanceCriteria],
-    requiresReview: input.requiresReview, required: input.required ?? true, status: 'planned',
+    id: input.id, runId, title: input.title, description: input.description, ownerAgentId: input.ownerAgentId,
+    delegatorAgentId: decision.agentId, dependsOn: [...input.dependsOn], acceptanceCriteria: [...input.acceptanceCriteria], required: input.required ?? true, status: 'planned',
     createdAt: decision.occurredAt, updatedAt: decision.occurredAt, startedAt: null, completedAt: null,
   };
 }
@@ -106,11 +106,9 @@ function transitionTask(state: OrchestrationState, command: Extract<Orchestratio
   }
   if (command.status === 'working') {
     invariant(state.run.status === 'running', 'INVALID_TASK_TRANSITION', 'The run must be running before a task can start.');
-    invariant(decision.agentId === task.assigneeAgentId, 'ACTOR_NOT_AUTHORIZED', 'Only the assigned agent can start this task.');
+    invariant(decision.agentId === task.ownerAgentId, 'ACTOR_NOT_AUTHORIZED', 'Only the assigned agent can start this task.');
   }
-  if (task.status === 'working' && command.status === 'completed') {
-    invariant(!task.requiresReview, 'REVIEW_REQUIRED', 'This task must enter needs_review before it can be completed.');
-  }
+
   if (command.status === 'blocked' || command.status === 'failed' || command.status === 'cancelled') requireReason(command.reason);
   if (command.status === 'ready' && task.status !== 'planned') {
     requireReason(command.reason); requireTaskOwner(state, task, decision);
@@ -118,6 +116,7 @@ function transitionTask(state: OrchestrationState, command: Extract<Orchestratio
   const terminal = command.status === 'completed' || command.status === 'failed' || command.status === 'cancelled';
   const changed: AgentTask = {
     ...task, status: command.status, updatedAt: decision.occurredAt,
+    ...(command.status === 'working' ? { attempts: [...executionAttempts(task), { number: executionAttempts(task).length + 1, status: 'working' as const, phase: 'worktree_preparation' as const, failure: null, startedAt: decision.occurredAt, finishedAt: null }] } : {}),
     startedAt: command.status === 'working' ? task.startedAt ?? decision.occurredAt : task.startedAt,
     completedAt: terminal ? decision.occurredAt : null,
   };
@@ -153,7 +152,7 @@ function transitionRun(state: OrchestrationState, command: Extract<Orchestration
   invariant(runTransitions[state.run.status]?.includes(command.status) || (response && state.run.status === 'planning' && command.status === 'completed'), 'INVALID_RUN_TRANSITION', `Cannot change run from ${state.run.status} to ${command.status}.`);
   if (command.status === 'completed') {
     invariant(state.tasks.every(task => !task.required || task.status === 'completed'), 'REQUIRED_TASKS_INCOMPLETE', 'Complete every required task before completing the run.');
-    invariant(!state.tasks.some(task => task.status === 'working' || task.status === 'needs_review'), 'ACTIVE_TASKS_REMAIN', 'Finish or cancel active optional tasks before completing the run.');
+    invariant(!state.tasks.some(task => task.status === 'working' || task.status === 'needs_attention'), 'ACTIVE_TASKS_REMAIN', 'Finish or cancel active optional tasks before completing the run.');
   }
   if (command.status === 'failed' || command.status === 'cancelled') requireReason(command.reason);
   let next = state;
@@ -222,8 +221,8 @@ export function applyOrchestrationCommand(state: OrchestrationState, command: Or
       const tasks = command.tasks.map(input => createTask(input, state.run.id, decision));
       next = { ...state, tasks }; validateTaskGraph(state.run.id, tasks);
       next = changePlan(next, { type: 'plan.create', id: command.id, summary: command.summary, taskIds: tasks.map(task => task.id) }, decision, emit);
-      for (const task of tasks) emit({ type: 'task.created', taskId: task.id, agentId: task.assigneeAgentId, delegatorAgentId: task.delegatorAgentId, task });
-      for (const task of tasks) emit({ type: 'task.assigned', taskId: task.id, agentId: task.assigneeAgentId, previousAgentId: null });
+      for (const task of tasks) emit({ type: 'task.created', taskId: task.id, agentId: task.ownerAgentId, delegatorAgentId: task.delegatorAgentId, task });
+      for (const task of tasks) emit({ type: 'task.assigned', taskId: task.id, agentId: task.ownerAgentId, previousAgentId: null });
       next = promoteReady(next, decision.occurredAt, emit);
       next = transitionRun(next, { type: 'run.transition', status: 'running' }, decision, emit); break;
     }
@@ -231,15 +230,50 @@ export function applyOrchestrationCommand(state: OrchestrationState, command: Or
       invariant(Array.isArray(command.tasks) && command.tasks.length > 0, 'INVALID_INPUT', 'Provide at least one task.');
       const tasks = command.tasks.map(input => createTask(input, state.run.id, decision));
       next = { ...state, tasks: [...state.tasks, ...tasks] }; validateTaskGraph(state.run.id, next.tasks);
-      for (const task of tasks) emit({ type: 'task.created', taskId: task.id, agentId: task.assigneeAgentId, delegatorAgentId: task.delegatorAgentId, task });
+      for (const task of tasks) emit({ type: 'task.created', taskId: task.id, agentId: task.ownerAgentId, delegatorAgentId: task.delegatorAgentId, task });
       next = promoteReady(next, decision.occurredAt, emit); break;
     }
+    case 'task.retry': {
+      const task = taskById(state, command.taskId); requireOrganizer(state, decision);
+      invariant(retryableTask(task, command.verifiedLegacyPreparationFailure, command.verifiedRuntimePreparationFailure), 'INVALID_TASK_TRANSITION', 'This failure cannot be retried.');
+      const history = executionAttempts(task).map(attempt => !task.attempts?.length && command.verifiedLegacyPreparationFailure ? { ...attempt, phase: 'worktree_preparation' as const, failure: 'WORKTREE_PREPARATION_FAILED' as const } : attempt);
+      next = transitionTask(replaceTask(state, { ...task, attempts: history }), { type: 'task.transition', taskId: task.id, status: 'ready', reason: 'USER_EXECUTION_RETRY' }, decision, emit); break;
+    }
+    case 'task.execution_phase': {
+      const task = taskById(state, command.taskId);
+      invariant(task.status === 'working' && task.ownerAgentId === decision.agentId, 'ACTOR_NOT_AUTHORIZED', 'Only an active task can advance its execution stage.');
+      const order = ['worktree_preparation', 'runtime_preparation', 'model_execution'];
+      const attempts = executionAttempts(task), previous = attempts.at(-1)!;
+      invariant(order.indexOf(command.phase) === order.indexOf(previous.phase) + 1, 'INVALID_INPUT', 'Execution phases must advance in order.');
+      next = replaceTask(state, { ...task, attempts: [...attempts.slice(0,-1), { ...previous, phase: command.phase }] });
+      emit({ type: 'task.execution_phase_changed', taskId: task.id, agentId: task.ownerAgentId, phase: command.phase }); break;
+    }
+    case 'task.set_session': {
+      const task = taskById(state, command.taskId);
+      invariant(task.status === 'working' && task.ownerAgentId === decision.agentId, 'ACTOR_NOT_AUTHORIZED', 'Only the active owner can retain its session.');
+      invariant(['codex', 'claude'].includes(command.session.runtime), 'INVALID_INPUT', 'Unsupported runtime.');
+      nonEmpty(command.session.externalSessionId, 'Session ID');
+      invariant(!task.session || JSON.stringify(task.session) === JSON.stringify(command.session), 'INVALID_INPUT', 'A task session cannot be replaced.');
+      if (task.session) return immutable({ state, events: [] });
+      next = replaceTask(state, { ...task, session: command.session });
+      emit({ type: 'task.session_set', taskId: task.id, agentId: task.ownerAgentId, session: command.session }); break;
+    }
+    case 'task.finish': {
+      const task = taskById(state, command.taskId);
+      invariant(task.status === 'working' && task.ownerAgentId === decision.agentId, 'ACTOR_NOT_AUTHORIZED', 'Only the active owner can finish execution.');
+      nonEmpty(command.report.summary, 'Execution summary');
+      next = transitionTask(state, { type: 'task.transition', taskId: task.id,
+        status: command.status, ...(command.reason ? { reason: command.reason } : {}) }, decision, emit);
+      const attempts = executionAttempts(task), last = attempts.at(-1)!;
+      next = replaceTask(next, { ...taskById(next, task.id), execution: command.report, attempts: [...attempts.slice(0,-1), { ...last, status: taskById(next, task.id).status, failure: command.failure ?? (command.status === 'failed' ? 'UNKNOWN_FAILURE' : null), finishedAt: decision.occurredAt, report: command.report }] });
+      emit({ type: 'task.execution_recorded', taskId: task.id, agentId: task.ownerAgentId, report: command.report }); break;
+    }
     case 'task.assign': {
-      const task = taskById(state, command.taskId); mutableTask(task); requireTaskOwner(state, task, decision); nonEmpty(command.assigneeAgentId, 'Assignee');
-      invariant(task.status !== 'working' && task.status !== 'needs_review' && task.assigneeAgentId !== command.assigneeAgentId,
+      const task = taskById(state, command.taskId); mutableTask(task); requireTaskOwner(state, task, decision); nonEmpty(command.ownerAgentId, 'Assignee');
+      invariant(task.status !== 'working' && task.ownerAgentId !== command.ownerAgentId,
         'INVALID_ASSIGNMENT', 'Reassign only inactive tasks to a different single agent.');
-      next = replaceTask(state, { ...task, assigneeAgentId: command.assigneeAgentId, updatedAt: decision.occurredAt });
-      emit({ type: 'task.assigned', taskId: task.id, agentId: command.assigneeAgentId, previousAgentId: task.assigneeAgentId }); break;
+      next = replaceTask(state, { ...task, ownerAgentId: command.ownerAgentId, updatedAt: decision.occurredAt });
+      emit({ type: 'task.assigned', taskId: task.id, agentId: command.ownerAgentId, previousAgentId: task.ownerAgentId }); break;
     }
     case 'task.set_dependencies': {
       const task = taskById(state, command.taskId); mutableTask(task); requireTaskOwner(state, task, decision);
@@ -249,7 +283,7 @@ export function applyOrchestrationCommand(state: OrchestrationState, command: Or
       next = replaceTask(state, updated); validateTaskGraph(state.run.id, next.tasks);
       if (task.status === 'ready' && !dependenciesCompleted(updated, next.tasks)) updated = { ...updated, status: 'planned' };
       next = replaceTask(next, updated);
-      emit({ type: 'task.dependencies_changed', taskId: task.id, agentId: task.assigneeAgentId, dependsOn: updated.dependsOn, from: task.status, status: updated.status });
+      emit({ type: 'task.dependencies_changed', taskId: task.id, agentId: task.ownerAgentId, dependsOn: updated.dependsOn, from: task.status, status: updated.status });
       next = promoteReady(next, decision.occurredAt, emit); break;
     }
     case 'task.transition': next = transitionTask(state, command, decision, emit); break;

@@ -33,7 +33,7 @@ test('Runtime abstraction and adapter-specific schema',async t=>{
  await t.test('all envelopes decode to strong union and unused fields cannot carry data',()=>{
   const blank={type:'respond',message:'Answer',questions:[],planSummary:'',tasks:[]};assert.deepEqual(decode(JSON.stringify(blank)),{type:'respond',message:'Answer'});
   assert.deepEqual(decode(JSON.stringify({...blank,type:'ask_user',questions:['Which framework?']})),{type:'ask_user',message:'Answer',questions:['Which framework?']});
-  const task={key:'build',title:'Build',description:'Build it',assigneeAgentId:'a',dependsOn:[],acceptanceCriteria:['Works'],requiresReview:true};const plan={...blank,type:'create_plan',planSummary:'Build',tasks:[task]};assert.equal(decode(JSON.stringify(plan)).tasks[0].key,'build');
+  const task={key:'build',title:'Build',description:'Build it',ownerAgentId:'a',dependsOn:[],acceptanceCriteria:['Works']};const plan={...blank,type:'create_plan',planSummary:'Build',tasks:[task]};assert.equal(decode(JSON.stringify(plan)).tasks[0].key,'build');
   for(const value of [{...blank,questions:['extra']},{...blank,planSummary:'extra'},{...blank,tasks:[task]},{...blank,type:'ask_user',questions:['Q'],tasks:[task]},{...plan,questions:['extra']},{...blank,extra:'SECRET'}, {...blank,type:'ask_user',questions:[]}])assert.throws(()=>decode(JSON.stringify(value)),e=>e.code==='INVALID_STRUCTURED_RESULT'&&!e.message.includes('SECRET'));
  });
  await t.test('safe schema diagnostics omit raw server text',()=>{

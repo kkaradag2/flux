@@ -7,8 +7,8 @@ import { SmokeTestError, object, identifier, requiredString, HELLO, SMOKE_PROMPT
 export class CodexAppServerClient {
   constructor(private createTransport: (cwd: string, signal: AbortSignal) => Promise<AppServerWire>) {}
   createChatSession(): CodexChatSession { return new CodexChatSession(this.createTransport); }
-  createStructuredSession(outputSchema: import('./contracts').AppServerJsonValue): CodexChatSession {
-    return new CodexChatSession(this.createTransport, { outputSchema });
+  createStructuredSession(outputSchema: import('./contracts').AppServerJsonValue, taskExecution = false): CodexChatSession {
+    return new CodexChatSession(this.createTransport, { outputSchema, taskExecution });
   }
   static using(runner: RuntimeCommandRunner, verifyProcessExit = false): CodexAppServerClient {
     return new CodexAppServerClient(async (cwd, signal) => {

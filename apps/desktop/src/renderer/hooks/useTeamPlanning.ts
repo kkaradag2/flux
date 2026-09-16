@@ -34,9 +34,20 @@ export function useTeamPlanning() {
       else setError(result.error.message);
     } catch { if (ticket === generation.current && alive.current) setError('Planning history could not be loaded.'); }
   }, [retain, accept]);
+  const execute = useCallback((retry = false) => {
+    const run = latest.current?.run, detail = current.current;
+    if (!run || !detail || pending.current || !(retry ? latest.current?.execution?.retry : latest.current?.execution?.canStart)) return;
+    pending.current = true; stopRequested.current = false; setError(null); const ticket = generation.current;
+    void (retry ? window.flux.retryTaskExecution({ runId: run.id }) : window.flux.startNextTaskExecution({ runId: run.id })).then(result => {
+      if (!alive.current || ticket !== generation.current) return;
+      if (result.ok) accept({ conversationId: detail.id, view: result.value }); else setError(result.error.message);
+    }).catch(() => { if (alive.current && ticket === generation.current) setError('Task execution could not finish. Partial work was preserved.'); })
+      .finally(() => { if (alive.current && ticket === generation.current) pending.current = false; });
+  }, [accept]);
   const stop = useCallback(() => {
     stopRequested.current = true;
     const run = latest.current?.run;
+    if (run && (latest.current?.execution?.activeTaskId || latest.current?.execution?.checking)) { void window.flux.cancelTaskExecution({ runId: run.id }).then(result => { if (!result.ok && alive.current) setError('Task execution could not be stopped. Try Stop again.'); }).catch(() => { if (alive.current) setError('Task execution could not be stopped. Try Stop again.'); }); return; }
     if (run?.status === 'planning') void window.flux.cancelTeamPrompt({ runId: run.id }).then(result => {
       if (!result.ok && alive.current) setError('Planning could not be stopped. Try Stop again.');
     }).catch(() => { if (alive.current) setError('Planning could not be stopped. Try Stop again.'); });
@@ -48,7 +59,7 @@ export function useTeamPlanning() {
   }, [stop]);
   const send = useCallback((input: SingleAgentInput): boolean => {
     if (pending.current || latest.current?.run?.status === 'planning' || !input.prompt.trim()) return false;
-    if (latest.current?.run?.status === 'running') { setError('The execution plan is ready. Task execution is not available yet.'); return false; }
+    if (latest.current?.run?.status === 'running') { setError('Use the execution plan controls to run the next task. Plan revision is not available yet.'); return false; }
     pending.current = true; stopRequested.current = false; setBusy(true); setError(null);
     const ticket = generation.current, isCurrent = () => alive.current && ticket === generation.current;
     void (async () => {
@@ -73,8 +84,9 @@ export function useTeamPlanning() {
     })();
     return true;
   }, [accept, retain]);
-  const running = busy || view?.run?.status === 'planning';
+  const activeTask = view?.tasks.find(task => task.id === view.execution?.activeTaskId);
+  const running = !!activeTask || !!view?.execution?.checking || busy || view?.run?.status === 'planning';
   return { conversation, view, messages: conversation ? savedChatMessages(conversation) : [], running,
-    workingAgentId: running ? view?.run?.organizerAgentId ?? conversation?.leadAgentId ?? null : null,
-    error, open, reset, send, stop };
+    workingAgentId: activeTask ? activeTask.assignee.id : view?.execution?.checking ? null : running ? view?.run?.organizerAgentId ?? conversation?.leadAgentId ?? null : null,
+    error, open, reset, send, stop, execute: () => execute(false), retry: () => execute(true) };
 }

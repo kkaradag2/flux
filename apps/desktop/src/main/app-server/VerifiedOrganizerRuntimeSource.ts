@@ -10,13 +10,16 @@ import type { CodexRuntimeSource } from './CodexAgentRuntimeAdapter';
 export const ORGANIZER_OUTPUT_SCHEMA_VERSIONS = ['0.154.0'] as const;
 export class VerifiedOrganizerRuntimeSource implements CodexRuntimeSource {
  constructor(private installations: Pick<CodexInstallationService, 'resolve'>, private loadState: () => Promise<CodexRuntimeState | null>) {}
- async resolve(signal: AbortSignal) {
+ async resolve(signal: AbortSignal, expected?: { installationId: string; version: string }) {
   const state = await this.loadState();
   if (signal.aborted || state?.operationalStatus !== 'READY' || state.verificationStatus !== 'passed' || !state.installationId) return null;
+  if (expected && (state.installationId !== expected.installationId || state.cliVersion !== expected.version)) return null;
   const id = state.installationId;
   const executable = await this.installations.resolve();
   if (!executable || candidateId(await realpath(executable)) !== id || signal.aborted) return null;
   const runner = new RuntimeCommandRunner(async () => {
+   const currentState = await this.loadState();
+   if (expected && (currentState?.operationalStatus !== 'READY' || currentState.installationId !== expected.installationId || currentState.cliVersion !== expected.version)) return null;
    const current = await this.installations.resolve();
    return current === executable ? current : null;
   });

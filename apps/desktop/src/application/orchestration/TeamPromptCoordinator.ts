@@ -113,8 +113,8 @@ export class TeamPromptCoordinator {
         const ids = new Map(decision.tasks.map(task => [task.key, this.values.newId()]));
         const saved = await this.apply(run, { type: 'plan.initialize', id: this.values.newId(), summary: decision.planSummary,
           tasks: decision.tasks.map(task => ({ id: ids.get(task.key)!, title: task.title, description: task.description,
-            assigneeAgentId: task.assigneeAgentId, dependsOn: task.dependsOn.map(key => ids.get(key)!),
-            acceptanceCriteria: task.acceptanceCriteria, requiresReview: task.requiresReview })) });
+            ownerAgentId: task.ownerAgentId, dependsOn: task.dependsOn.map(key => ids.get(key)!),
+            acceptanceCriteria: task.acceptanceCriteria})) });
         return { type: 'plan_created', runId: run.id, message: decision.message, plan: saved.currentPlan!, tasks: saved.state.tasks };
       }
       await this.apply(run, decision.type === 'respond' ? { type: 'run.respond' } : { type: 'run.transition', status: 'waiting_input' });

@@ -38,7 +38,7 @@ test('Main orchestration composition and IPC boundary', async t => {
   const { orchestrationError, OrchestrationBoundaryError } = load('main/orchestration/OrchestrationBoundaryError');
   const { TeamPromptError } = load('application/orchestration/TeamPromptError');
   const now = '2026-09-15T14:00:00.000Z';
-  const task = (key, dependsOn = []) => ({ key, title: key, description: 'Implement ' + key, assigneeAgentId: 'developer', dependsOn, acceptanceCriteria: ['Works'], requiresReview: true });
+  const task = (key, dependsOn = []) => ({ key, title: key, description: 'Implement ' + key, ownerAgentId: 'developer', dependsOn, acceptanceCriteria: ['Works']});
   const ask = { type: 'ask_user', message: 'Please clarify', questions: ['Which format?'], planSummary: '', tasks: [] };
   const plan = { type: 'create_plan', message: 'Plan ready', questions: [], planSummary: 'Build then verify', tasks: [task('build'), task('verify', ['build'])] };
   const respond = { type: 'respond', message: 'Answer', questions: [], planSummary: '', tasks: [] };
@@ -158,7 +158,7 @@ test('Main orchestration composition and IPC boundary', async t => {
   await t.test('preload exposes four narrow methods, deduplicates callbacks and unsubscribes exactly once', async () => {
     const ipc = new EventEmitter(), sent = [], invoked = [];
     ipc.send = (...args) => sent.push(args); ipc.invoke = async (...args) => { invoked.push(args); return { ok: true, value: null }; };
-    const api = createOrchestrationApi(ipc); assert.deepEqual(Object.keys(api).sort(), ['cancelTeamPrompt', 'createTeamConversation', 'continueTeamPrompt', 'getConversationOrchestration', 'startTeamPrompt', 'subscribeToOrchestrationChanges'].sort());
+    const api = createOrchestrationApi(ipc); assert.deepEqual(Object.keys(api).sort(), ['retryTaskExecution', 'cancelTaskExecution', 'startNextTaskExecution', 'cancelTeamPrompt', 'createTeamConversation', 'continueTeamPrompt', 'getConversationOrchestration', 'startTeamPrompt', 'subscribeToOrchestrationChanges'].sort());
     let calls = 0; const listener = () => calls++;
     const off = api.subscribeToOrchestrationChanges(listener), repeated = api.subscribeToOrchestrationChanges(listener); assert.equal(off, repeated);
     assert.equal(ipc.listenerCount(channels.changed), 1); ipc.emit(channels.changed, {}, { conversationId: 'c', view: {} }); assert.equal(calls, 1);
@@ -193,7 +193,7 @@ test('Main orchestration composition and IPC boundary', async t => {
     });
     const result = await f.invoke(channels.start, f.request);
     assert.equal(result.error.code, 'ORCHESTRATION_FAILED'); assert.equal(f.calls.length, 0);
-    assert.equal(f.ipc.handlers.size, 5); assert.ok(!JSON.stringify(result).includes('SECRET'));
+    assert.equal(f.ipc.handlers.size, 8); assert.ok(!JSON.stringify(result).includes('SECRET'));
   });
   await t.test('window closure during continuation lookup cannot start a late model turn', async t => {
     const f = await fixture(t); f.choose(ask); const first = await f.invoke(channels.start, f.request);

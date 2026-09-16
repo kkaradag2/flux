@@ -9,7 +9,7 @@ export type CodexOrganizerEnvelope = Readonly<{
 
 const text = { type: 'string' } as const;
 const strings = { type: 'array', items: text } as const;
-const taskProperties = { key: text, title: text, description: text, assigneeAgentId: text, dependsOn: strings, acceptanceCriteria: strings, requiresReview: { type: 'boolean' } } as const;
+const taskProperties = { key: text, title: text, description: text, ownerAgentId: text, dependsOn: strings, acceptanceCriteria: strings } as const;
 const properties = { type: { type: 'string', enum: ['respond', 'ask_user', 'create_plan'] }, message: text, questions: strings, planSummary: text,
  tasks: { type: 'array', items: { type: 'object', properties: taskProperties, required: Object.keys(taskProperties), additionalProperties: false } },
 } as const satisfies Record<keyof CodexOrganizerEnvelope, AppServerJsonValue>;

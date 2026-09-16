@@ -1,11 +1,12 @@
-import { execFile } from 'node:child_process';
 import { lstat, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { devNull } from 'node:os';
-import { ProjectError, errorCode } from './ProjectError';
+import { ProjectError } from './ProjectError';
 import { pathKey } from './project-path';
 
+import { GitCommandRunner } from './GitCommandRunner';
+
 export class GitRepositoryService {
+  constructor(private commands = new GitCommandRunner()) {}
   async canonicalDirectory(directory: string): Promise<string> {
     pathKey(directory);
     try {
@@ -18,20 +19,7 @@ export class GitRepositoryService {
   }
 
   private run(directory: string, args: readonly string[]): Promise<string> {
-    const env = { ...process.env };
-    for (const key of Object.keys(env)) if (key.startsWith('GIT_')) delete env[key];
-    env.GIT_OPTIONAL_LOCKS = '0';
-    env.GIT_TERMINAL_PROMPT = '0';
-    env.GIT_CONFIG_NOSYSTEM = '1';
-    env.GIT_CONFIG_GLOBAL = process.platform === 'win32' ? 'NUL' : devNull;
-    return new Promise((resolve, reject) => {
-      execFile('git', ['-C', directory, ...args], { env, windowsHide: true, timeout: 10000, maxBuffer: 1024 * 1024, encoding: 'utf8' }, (error, stdout) => {
-        if (error) {
-          if (errorCode(error) === 'ENOENT') reject(new ProjectError('GIT_UNAVAILABLE', 'Git could not be found. Install Git before opening a project.'));
-          else reject(new ProjectError('GIT_READ_FAILED', 'Git could not read this repository. Check folder access and Git ownership settings.'));
-        } else resolve(stdout.trim());
-      });
-    });
+    return this.commands.run(directory, args);
   }
 
   async assertRepository(directory: string): Promise<void> {
@@ -50,8 +38,8 @@ export class GitRepositoryService {
 
   async getLocalBranches(directory: string): Promise<string[]> {
     await this.assertRepository(directory);
-    const output = await this.run(directory, ['for-each-ref', '--sort=refname', '--format=%(refname:short)', 'refs/heads/']);
-    const branches = output.split(/\r?\n/).filter(Boolean);
+    const output = await this.run(directory, ['for-each-ref', '--sort=refname', '--format=%(refname)', 'refs/heads/']);
+    const branches = output.split(/\r?\n/).filter(ref => ref.startsWith('refs/heads/')).map(ref => ref.slice(11));
     if (!branches.length) throw new ProjectError('NO_LOCAL_BRANCHES', 'No local branches were found in this repository. It may not have an initial commit yet.');
     return branches;
   }

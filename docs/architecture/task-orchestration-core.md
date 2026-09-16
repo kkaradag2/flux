@@ -1,3 +1,5 @@
+> Güncel sözleşme: [Generic tasks ve schema v2 migration](generic-task-contract.md). Aşağıdaki Phase 0/ilk persistence notları tarihsel tasarımı da içerir; review kuralları schema v2 ile kaldırılmıştır.
+
 # Task orchestration domain çekirdeği
 
 ## Sınır ve checkpoint

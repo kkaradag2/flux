@@ -27,7 +27,7 @@ test('Team prompt planning flow', async t => {
       }).outputText);
     }
   }
-  for (const directory of ['domain/orchestration', 'application/orchestration', 'application/runtime', 'main/orchestration', 'main/persistence']) await compile(directory);
+  for (const directory of ['shared', 'domain/orchestration', 'application/orchestration', 'application/runtime', 'main/orchestration', 'main/persistence']) await compile(directory);
   const load = file => require(path.join(output, file));
   const { TeamPromptCoordinator } = load('application/orchestration/TeamPromptCoordinator');
   const { TeamPromptError } = load('application/orchestration/TeamPromptError');
@@ -41,7 +41,7 @@ test('Team prompt planning flow', async t => {
   const session = { runtime: 'claude', externalSessionId: 'session-a' };
   const respond = { type: 'respond', message: 'Here is the answer.' };
   const ask = { type: 'ask_user', message: 'Please clarify.', questions: ['Which format?'] };
-  const task = (key, dependsOn = []) => ({ key, title: key, description: 'Implement ' + key, assigneeAgentId: 'developer', dependsOn, acceptanceCriteria: ['Works'], requiresReview: true });
+  const task = (key, dependsOn = []) => ({ key, title: key, description: 'Implement ' + key, ownerAgentId: 'developer', dependsOn, acceptanceCriteria: ['Works']});
   const plan = { type: 'create_plan', message: 'Plan prepared.', planSummary: 'Build then verify', tasks: [task('build'), task('verify', ['build'])] };
   const fails = code => error => error instanceof TeamPromptError && error.code === code;
   async function fixture(t, useFakeExecutor = false) {
@@ -124,7 +124,7 @@ test('Team prompt planning flow', async t => {
     const [build, verify] = result.tasks;
     assert.notEqual(build.id, 'build'); assert.notEqual(verify.id, 'verify'); assert.notEqual(build.id, verify.id);
     assert.deepEqual(verify.dependsOn, [build.id]); assert.equal(build.status, 'ready'); assert.equal(verify.status, 'planned');
-    for (const task of result.tasks) { assert.equal(task.runId, result.runId); assert.equal(task.assigneeAgentId, 'developer'); assert.equal(task.delegatorAgentId, 'lead'); assert.deepEqual(task.acceptanceCriteria, ['Works']); assert.equal(task.requiresReview, true); }
+    for (const task of result.tasks) { assert.equal(task.runId, result.runId); assert.equal(task.ownerAgentId, 'developer'); assert.equal(task.delegatorAgentId, 'lead'); assert.deepEqual(task.acceptanceCriteria, ['Works']); assert.equal('requiresReview' in task, false); }
     assert.deepEqual(saved.events.map(e => e.type), ['run.created', 'run.organizer_session_set', 'plan.created', 'task.created', 'task.created', 'task.assigned', 'task.assigned', 'task.ready', 'run.status_changed']);
     assert.equal(new Set(saved.events.map(e => e.id)).size, saved.events.length);
     assert.equal(f.writes.length, 3); assert.equal(f.writes[1].plans.length, 0);

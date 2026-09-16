@@ -39,7 +39,7 @@ export class TeamConversationJournal {
     return this.serial(async () => {
       const run = snapshot.state.run, record = await this.store.get(run.conversationId);
       if (record.mode !== 'team') return;
-      record.status = run.status === 'planning' ? 'running' : run.status === 'failed' ? 'failed' : run.status === 'cancelled' ? 'cancelled' : 'completed';
+      record.status = run.status === 'planning' || snapshot.state.tasks.some(task => task.status === 'working') ? 'running' : run.status === 'failed' ? 'failed' : run.status === 'cancelled' ? 'cancelled' : 'completed';
       record.updatedAt = run.updatedAt;
       const recovery = snapshot.events.some(event => event.type === 'run.failed' && event.reason === 'PLANNING_INTERRUPTED');
       record.interrupted = recovery;
@@ -53,6 +53,18 @@ export class TeamConversationJournal {
         if (!record.messages.some(message => message.id === id)) record.messages.push({ id, role: 'system', agentId: null,
           content: recovery ? 'Planning was interrupted. Send the request again.' : run.status === 'cancelled' ? 'Planning stopped.' : 'Planning could not finish. Send the request again.',
           createdAt: run.updatedAt, status: run.status });
+      }
+      for (const task of snapshot.state.tasks) {
+        const finished = [...snapshot.events].reverse().find(event => event.type === 'task.execution_recorded' && event.taskId === task.id);
+        if (!task.execution || !finished || record.messages.some(message => message.id === finished.id || message.id === `${run.id}:task:${task.id}:${finished.occurredAt}`)) continue;
+        const previousResults = snapshot.events.filter(event => event.type === 'task.execution_recorded' && event.taskId === task.id && event.id !== finished.id);
+        for (const message of record.messages) if (previousResults.some(event => message.id === event.id || message.id === `${run.id}:task:${task.id}:${event.occurredAt}`)) message.superseded = true;
+        const agent = (await this.agents.getAgents()).find(agent => agent.id === task.ownerAgentId);
+        record.messages.push({ id: finished.id, role: 'agent', agentId: task.ownerAgentId,
+          agentSnapshot: { id: task.ownerAgentId, name: task.execution.agentName, avatar: agent?.avatar ?? { type: 'builtin', value: 'robot' } },
+          content: task.execution.summary + (task.execution.evidence.length ? '\n\n' + task.execution.evidence.map(item => '- ' + item).join('\n') : '')
+            + (task.execution.changedFiles.length ? '\n\nChanged files (' + task.execution.changedFiles.length + '):\n' + task.execution.changedFiles.map(file => '- `' + file.replace(/`/g, '') + '`').join('\n') : ''),
+          createdAt: finished.occurredAt, status: task.status === 'failed' ? 'failed' : task.status === 'cancelled' ? 'cancelled' : 'completed' });
       }
       await this.store.save(record);
     });

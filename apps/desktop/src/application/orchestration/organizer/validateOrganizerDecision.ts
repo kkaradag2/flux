@@ -11,11 +11,10 @@ export function validateOrganizerDecision(value: unknown, context: OrganizerRunt
   if (value.type === 'create_plan') {
     const ids = new Set(context.members.map(member => member.id));
     if (ids.size !== context.members.length || !ids.has(context.organizerAgentId)) throw new OrganizerDecisionError('INVALID_CONTEXT');
-    for (const task of value.tasks) if (!context.members.some(member => member.id === task.assigneeAgentId && member.enabled)) throw new OrganizerDecisionError('INVALID_ASSIGNEE');
+    for (const task of value.tasks) if (!context.members.some(member => member.id === task.ownerAgentId && member.enabled)) throw new OrganizerDecisionError('INVALID_ASSIGNEE');
     // Transient graph projection only: no IDs are persisted and no transition is executed.
     const tasks: AgentTask[] = value.tasks.map(task => ({ id: task.key, runId: 'organizer-decision', title: task.title, description: task.description,
-      assigneeAgentId: task.assigneeAgentId, delegatorAgentId: context.organizerAgentId, dependsOn: task.dependsOn, acceptanceCriteria: task.acceptanceCriteria,
-      requiresReview: task.requiresReview, required: true, status: 'planned', createdAt: '', updatedAt: '', startedAt: null, completedAt: null }));
+      ownerAgentId: task.ownerAgentId, delegatorAgentId: context.organizerAgentId, dependsOn: task.dependsOn, acceptanceCriteria: task.acceptanceCriteria, required: true, status: 'planned', createdAt: '', updatedAt: '', startedAt: null, completedAt: null }));
     try { validateTaskGraph('organizer-decision', tasks); }
     catch (error) { if (error instanceof OrchestrationError) throw new OrganizerDecisionError('INVALID_DEPENDENCIES'); throw error; }
   }

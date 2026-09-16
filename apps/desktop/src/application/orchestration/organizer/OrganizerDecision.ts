@@ -2,10 +2,9 @@ export type OrganizerPlanTask = Readonly<{
   key: string;
   title: string;
   description: string;
-  assigneeAgentId: string;
+  ownerAgentId: string;
   dependsOn: readonly string[];
   acceptanceCriteria: readonly string[];
-  requiresReview: boolean;
 }>;
 
 export type OrganizerDecision =

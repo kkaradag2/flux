@@ -11,7 +11,7 @@ export type OrganizerRuntimeContext = Readonly<{
   projectId: string;
   projectName: string;
   branch: string;
-  members: readonly Readonly<{ id: string; name: string; description: string; runtime: AgentRuntimeType; enabled: boolean }>[];
+  members: readonly Readonly<{ id: string; name: string; description: string; enabled: boolean }>[];
 }>;
 
 export function createOrganizerRuntimeContext(team: { id: string; name: string; organizerAgentId: string | null; agentIds: readonly string[] }, agents: readonly { id: string; name: string; description: string; runtime: { type: AgentRuntimeType }; enabled: boolean }[], request: Pick<OrganizerRuntimeContext, 'userRequest' | 'conversationId' | 'projectId' | 'projectName' | 'branch'>): OrganizerRuntimeContext {
@@ -20,7 +20,7 @@ export function createOrganizerRuntimeContext(team: { id: string; name: string; 
   const members = team.agentIds.map(id => {
     const agent = agents.find(item => item.id === id);
     if (!agent) throw new OrganizerDecisionError('INVALID_CONTEXT');
-    return Object.freeze({ id: agent.id, name: agent.name, description: agent.description, runtime: agent.runtime.type, enabled: agent.enabled });
+    return Object.freeze({ id: agent.id, name: agent.name, description: agent.description, enabled: agent.enabled });
   });
   return Object.freeze({ teamId: team.id, teamName: team.name, organizerAgentId: organizer.id, organizerAgentName: organizer.name,
     userRequest: request.userRequest, conversationId: request.conversationId, projectId: request.projectId, projectName: request.projectName, branch: request.branch, members: Object.freeze(members) });
@@ -30,5 +30,5 @@ export function createOrganizerRuntimeContext(team: { id: string; name: string; 
 export function projectOrganizerContext(context: OrganizerRuntimeContext): OrganizerRuntimeContext {
   return { teamId: context.teamId, teamName: context.teamName, organizerAgentId: context.organizerAgentId, organizerAgentName: context.organizerAgentName,
     userRequest: context.userRequest, conversationId: context.conversationId, projectId: context.projectId, projectName: context.projectName, branch: context.branch,
-    members: context.members.map(member => ({ id: member.id, name: member.name, description: member.description, runtime: member.runtime, enabled: member.enabled })) };
+    members: context.members.map(member => ({ id: member.id, name: member.name, description: member.description, enabled: member.enabled })) };
 }

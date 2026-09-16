@@ -18,12 +18,12 @@ export function registerOrchestrationIpc(ipc: Pick<IpcMain, 'handle' | 'removeHa
     contents.once('destroyed', cleanup); contents.once('render-process-gone', cleanup); contents.on('did-start-navigation', navigate);
     return owner;
   }
-  for (const channel of [channels.get, channels.start, channels.continue, channels.create, channels.cancel]) {
+  for (const channel of [channels.get, channels.start, channels.continue, channels.create, channels.cancel, channels.execute, channels.cancelExecution, channels.retryExecution]) {
     ipc.handle(channel, async (event, ...args: unknown[]) => {
       if (!allowed(event) || args.length !== 1) return { ok: false, error: orchestrationError(null) };
       observe(event.sender);
       try {
-        const value = channel === channels.create ? await service.create(args[0]) : channel === channels.cancel ? await service.cancel(event.sender.id, args[0]) : channel === channels.get ? await service.get(args[0]) : channel === channels.start ? await service.start(event.sender.id, args[0]) : await service.continue(event.sender.id, args[0]);
+        const value = channel === channels.retryExecution ? await service.execute(event.sender.id, args[0], true) : channel === channels.execute ? await service.execute(event.sender.id, args[0]) : channel === channels.cancelExecution ? await service.cancelExecution(event.sender.id, args[0]) : channel === channels.create ? await service.create(args[0]) : channel === channels.cancel ? await service.cancel(event.sender.id, args[0]) : channel === channels.get ? await service.get(args[0]) : channel === channels.start ? await service.start(event.sender.id, args[0]) : await service.continue(event.sender.id, args[0]);
         return { ok: true, value };
       } catch (error) { return { ok: false, error: orchestrationError(error) }; }
     });
@@ -40,7 +40,7 @@ export function registerOrchestrationIpc(ipc: Pick<IpcMain, 'handle' | 'removeHa
   ipc.on(channels.subscribe, subscribe);
   return () => {
     ipc.removeListener(channels.subscribe, subscribe);
-    for (const channel of [channels.get, channels.start, channels.continue, channels.create, channels.cancel]) ipc.removeHandler(channel);
+    for (const channel of [channels.get, channels.start, channels.continue, channels.create, channels.cancel, channels.execute, channels.cancelExecution, channels.retryExecution]) ipc.removeHandler(channel);
     for (const owner of [...owners.values()]) owner.cleanup();
   };
 }

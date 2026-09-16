@@ -32,4 +32,32 @@ test('Team planning renderer controller and plan presentation',async t=>{
  await t.test('saved decisions retain plan association, safe errors and ordinary response/question text',()=>{
   const d=detail('a');d.messages=[{id:'r',role:'agent',content:'Answer',status:'completed'},{id:'q',role:'agent',content:'Clarify\n\n- Which framework?',status:'completed'},{id:'p',role:'agent',content:'Plan ready',planRunId:'run-a',status:'completed'},{id:'e',role:'system',content:'Planning was interrupted. Send the request again.',status:'failed'}];const messages=savedChatMessages(d);assert.equal(messages.length,4);assert.equal(messages[2].planRunId,'run-a');assert.equal(messages[3].role,'error');assert.equal(messages[1].text,d.messages[1].content);
  });
+ await t.test('execution controls expose start/stop/next without selecting an owner in renderer',()=>{
+  const {ExecutionPlanCard}=load('components/chat/ExecutionPlanCard');
+  for(const [execution,label] of [[{canStart:true,activeTaskId:null,hasExecuted:false},'Start execution'],[{canStart:false,activeTaskId:'build',hasExecuted:true},'Stop'],[{canStart:true,activeTaskId:null,hasExecuted:true},'Run next task']]){
+   const data={...view('a','running'),plan:{id:'p',summary:'Build',version:1},execution};const html=renderToStaticMarkup(React.createElement(ExecutionPlanCard,{view:data}));assert.ok(html.includes('>'+label+'</button>'));
+  }
+ });
+ await t.test('execution subscription marks only owner Working; navigation restoration and Stop use run ID',async()=>{
+  let stopped;const data={...view('a','running'),execution:{canStart:false,activeTaskId:'build',hasExecuted:true},tasks:[{id:'build',title:'Build',status:'working',assignee:{id:'developer',name:'Developer'}}]};
+  const h=harness({getConversationOrchestration:async()=>({ok:true,value:data}),cancelTaskExecution:async input=>{stopped=input;return{ok:true}}});await h.render().open(detail('a'));let state=h.render();assert.equal(state.workingAgentId,'developer');assert.equal(state.running,true);state.stop();assert.deepEqual(JSON.parse(JSON.stringify(stopped)),{runId:'run-a'});
+  h.emit({conversationId:'a',view:{...data,execution:{...data.execution,activeTaskId:null},tasks:[{...data.tasks[0],status:'completed'}]}});state=h.render();assert.equal(state.running,false);assert.equal(state.workingAgentId,null);h.unmount();assert.equal(h.off(),1);
+ });
+
+ await t.test('Retry appears only for an eligible failure, carries attempt info and sends only run ID',async()=>{
+  const {ExecutionPlanCard}=load('components/chat/ExecutionPlanCard'),data={...view('a','running'),plan:{id:'p',summary:'Plan',version:1},execution:{canStart:false,activeTaskId:null,hasExecuted:true,retry:{attempt:1,message:'The isolated workspace could not be prepared.'}}};
+  const html=renderToStaticMarkup(React.createElement(ExecutionPlanCard,{view:data}));assert.ok(html.includes('Retry execution'));assert.ok(html.includes('Previous attempt: 1'));assert.ok(!renderToStaticMarkup(React.createElement(ExecutionPlanCard,{view:{...data,execution:{...data.execution,retry:null}}})).includes('Retry execution'));assert.ok(!renderToStaticMarkup(React.createElement(ExecutionPlanCard,{view:{...data,execution:{...data.execution,activeTaskId:'task'}}})).includes('Retry execution'));
+  let payload,calls=0;const done=deferred();const h=harness({getConversationOrchestration:async()=>({ok:true,value:data}),retryTaskExecution:input=>{payload=input;calls++;return done.promise}});await h.render().open(detail('a'));h.render().retry();h.render().retry();assert.equal(calls,1);assert.deepEqual(JSON.parse(JSON.stringify(payload)),{runId:'run-a'});done.resolve({ok:true,value:{...data,execution:{...data.execution,retry:null}}});await new Promise(r=>setImmediate(r));h.unmount();assert.equal(h.off(),1);
+ });
+
+
+ await t.test('preflight renders Stop without Retry, preserves failed task, then marks Developer Working',async()=>{
+  const {ExecutionPlanCard}=load('components/chat/ExecutionPlanCard');let stopped;
+  const data={...view('a','running'),plan:{id:'p',summary:'Plan',version:1},execution:{checking:true,canStart:false,activeTaskId:null,hasExecuted:true,retry:{attempt:2,message:'Failed'}},tasks:[{id:'build',title:'Build',status:'failed',assignee:{id:'developer',name:'Developer'}}]};
+  const html=renderToStaticMarkup(React.createElement(ExecutionPlanCard,{view:data}));assert.ok(html.includes('>Stop</button>'));assert.ok(!html.includes('Retry execution'));
+  const h=harness({getConversationOrchestration:async()=>({ok:true,value:data}),cancelTaskExecution:async input=>{stopped=input;return{ok:true}}});await h.render().open(detail('a'));
+  assert.equal(h.render().running,true);assert.equal(h.render().workingAgentId,null);h.render().stop();assert.deepEqual(JSON.parse(JSON.stringify(stopped)),{runId:'run-a'});
+  h.emit({conversationId:'a',view:{...data,execution:{...data.execution,checking:false,activeTaskId:'build'},tasks:[{...data.tasks[0],status:'working'}]}});assert.equal(h.render().workingAgentId,'developer');
+  h.emit({conversationId:'a',view:{...data,execution:{...data.execution,checking:false,retry:null},tasks:[{...data.tasks[0],status:'failed'}]}});assert.equal(h.render().running,false);assert.equal(h.render().workingAgentId,null);h.unmount();
+ });
 });

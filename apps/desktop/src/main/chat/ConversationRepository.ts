@@ -1,6 +1,8 @@
 import { mkdir, readFile, readdir, open, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { builtinAgentIcons } from '../../shared/management-api';
+import { assetId } from '../management/validation';
 import type { AgentDefinition } from '../../shared/management-api';
 import type { ConversationDetail, ConversationSummary, ConversationMessage } from '../../shared/conversation-api';
 import { storedAgent } from '../management/validation';
@@ -44,8 +46,17 @@ function parse(value: unknown): Conversation {
     const message = value as Record<string, unknown>, role = message.role, status = message.status;
     if (role !== 'user' && role !== 'agent' && role !== 'system') throw new ConversationStorageError();
     if (status !== 'streaming' && status !== 'completed' && status !== 'failed' && status !== 'cancelled') throw new ConversationStorageError();
-    if (typeof message.content !== 'string' || message.content.length > 2 * 1024 * 1024 || message.agentId !== (role === 'agent' ? agentDefinition.id : null)) throw new ConversationStorageError();
-    return { ...(message.planRunId === undefined ? {} : { planRunId: text(message.planRunId) }), id: text(message.id), role, content: message.content, agentId: role === 'agent' ? agentDefinition.id : null, createdAt: date(message.createdAt), status };
+    if (message.superseded !== undefined && (data.mode !== 'team' || typeof message.superseded !== 'boolean')) throw new ConversationStorageError();
+    let messageAgent: ConversationMessage['agentSnapshot'];
+    if (data.mode === 'team' && role === 'agent' && message.agentSnapshot) {
+      const snapshot = message.agentSnapshot as Record<string, unknown>, avatar = snapshot.avatar as Record<string, unknown>;
+      if (!avatar || (avatar.type !== 'builtin' && avatar.type !== 'image')) throw new ConversationStorageError();
+      const icon = builtinAgentIcons.find(icon => icon === avatar.value);
+      if (avatar.type === 'builtin' && !icon) throw new ConversationStorageError();
+      messageAgent = { id: text(snapshot.id), name: text(snapshot.name), avatar: avatar.type === 'builtin' ? { type: 'builtin', value: icon! } : { type: 'image', assetId: assetId(avatar.assetId) } };
+    }
+    if (typeof message.content !== 'string' || message.content.length > 2 * 1024 * 1024 || message.agentId !== (role === 'agent' ? messageAgent?.id ?? agentDefinition.id : null)) throw new ConversationStorageError();
+    return { ...(message.superseded === undefined ? {} : { superseded: message.superseded as boolean }), ...(messageAgent ? { agentSnapshot: messageAgent } : {}), ...(message.planRunId === undefined ? {} : { planRunId: text(message.planRunId) }), id: text(message.id), role, content: message.content, agentId: role === 'agent' ? messageAgent?.id ?? agentDefinition.id : null, createdAt: date(message.createdAt), status };
   });
   if (new Set(messages.map(message => message.id)).size !== messages.length) throw new ConversationStorageError();
   if (data.mode !== undefined && data.mode !== 'single-agent' && data.mode !== 'team') throw new ConversationStorageError();

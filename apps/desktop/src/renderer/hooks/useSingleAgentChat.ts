@@ -3,8 +3,8 @@ import type { ChatAgent, RunIdentity, SingleAgentEvent, SingleAgentInput } from 
 import type { ConversationDetail } from '../../shared/conversation-api';
 export type ChatMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; agent?: ChatAgent; streaming?: boolean; planRunId?: string };
 export function savedChatMessages(conversation: ConversationDetail): ChatMessage[] {
-  return conversation.messages.map(message => ({ id: message.id, role: message.role === 'system' ? 'error' : message.role, text: message.content, ...(message.planRunId ? { planRunId: message.planRunId } : {}),
-    ...(message.role === 'agent' ? { agent: conversation.agentSnapshot, streaming: message.status === 'streaming' } : {}) }));
+  return conversation.messages.filter(message => !message.superseded).map(message => ({ id: message.id, role: message.role === 'system' ? 'error' : message.role, text: message.content, ...(message.planRunId ? { planRunId: message.planRunId } : {}),
+    ...(message.role === 'agent' ? { agent: message.agentSnapshot ?? conversation.agentSnapshot, streaming: message.status === 'streaming' } : {}) }));
 }
 export function useSingleAgentChat() {
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);

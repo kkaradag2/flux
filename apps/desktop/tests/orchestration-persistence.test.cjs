@@ -17,7 +17,7 @@ test('Orchestration aggregate persistence', async t => {
     await fs.rm(directory, { recursive: true, force: true });
   }
   t.after(() => remove(output));
-  for (const directory of ['domain/orchestration', 'application/orchestration', 'main/orchestration', 'main/persistence']) {
+  for (const directory of ['shared', 'domain/orchestration', 'application/orchestration', 'main/orchestration', 'main/persistence']) {
     await fs.mkdir(path.join(output, directory), { recursive: true });
     for (const file of await fs.readdir(path.join(root, 'apps/desktop/src', directory))) {
       if (!file.endsWith('.ts')) continue;
@@ -36,7 +36,7 @@ test('Orchestration aggregate persistence', async t => {
   const when = '2026-09-15T12:00:00.000Z';
   const decision = (id, extra = {}) => ({ id, agentId: 'lead', occurredAt: when, ...extra });
   const input = (id = 'run', conversationId = 'conversation') => ({ id, conversationId, projectId: 'project', teamId: 'team', organizerAgentId: 'lead', goal: 'Deliver feature' });
-  const task = (id, dependsOn = []) => ({ id, title: id, description: 'Implement ' + id, assigneeAgentId: 'developer', dependsOn, acceptanceCriteria: ['Tests pass'], requiresReview: false });
+  const task = (id, dependsOn = []) => ({ id, title: id, description: 'Implement ' + id, ownerAgentId: 'developer', dependsOn, acceptanceCriteria: ['Tests pass']});
   const failure = code => error => error instanceof OrchestrationPersistenceError && error.code === code;
   async function fixture(subtest) {
     const directory = await fs.mkdtemp(path.join(output, 'case-')); subtest.after(() => remove(directory));
@@ -56,7 +56,7 @@ test('Orchestration aggregate persistence', async t => {
   await t.test('run and first event are atomically stored and rehydrate in a new repository instance', async t => {
     const f = await fixture(t), saved = await f.initialize();
     assert.equal(saved.revision, 1); const raw = JSON.parse(await fs.readFile(f.file(), 'utf8'));
-    assert.equal(raw.schemaVersion, 1); assert.equal(raw.run.id, 'run'); assert.deepEqual(raw.plans, []); assert.deepEqual(raw.tasks, []); assert.equal(raw.events[0].type, 'run.created');
+    assert.equal(raw.schemaVersion, 2); assert.equal(raw.run.id, 'run'); assert.deepEqual(raw.plans, []); assert.deepEqual(raw.tasks, []); assert.equal(raw.events[0].type, 'run.created');
     const restarted = new JsonOrchestrationRepository(f.location);
     assert.deepEqual(await restarted.rehydrate('run'), saved); assert.deepEqual(await restarted.getRun('run'), saved.state.run);
     await assert.rejects(f.initialize(), failure('ALREADY_EXISTS')); assert.equal((await f.repository.getEvents('run')).length, 1);
@@ -101,28 +101,28 @@ test('Orchestration aggregate persistence', async t => {
     await assert.rejects(f.repository.save({ state: { ...saved.state, plans: [...saved.state.plans, saved.currentPlan] }, events: [] }, saved.revision), failure('DUPLICATE_PLAN_VERSION'));
     await assert.rejects(f.repository.save({ state: { ...saved.state, plans: [{ ...saved.currentPlan, summary: 'overwrite' }] }, events: [] }, saved.revision), failure('DUPLICATE_PLAN_VERSION'));
     assert.equal(await fs.readFile(f.file(), 'utf8'), original);
-    await f.service.apply('run', { type: 'task.assign', taskId: 'build', assigneeAgentId: 'tester' }, decision('assign'));
+    await f.service.apply('run', { type: 'task.assign', taskId: 'build', ownerAgentId: 'tester' }, decision('assign'));
     assert.deepEqual((await f.repository.rehydrate('run')).currentPlan, saved.currentPlan);
   });
   await t.test('concurrent updates through different instances retain both tasks and their events', async t => {
     const f = await fixture(t); await f.initialize(); await f.plan();
     const other = new PersistedOrchestration(new JsonOrchestrationRepository(f.location));
     await Promise.all([
-      f.service.apply('run', { type: 'task.assign', taskId: 'build', assigneeAgentId: 'builder-two' }, decision('assign-build')),
-      other.apply('run', { type: 'task.assign', taskId: 'test', assigneeAgentId: 'tester-two' }, decision('assign-test')),
+      f.service.apply('run', { type: 'task.assign', taskId: 'build', ownerAgentId: 'builder-two' }, decision('assign-build')),
+      other.apply('run', { type: 'task.assign', taskId: 'test', ownerAgentId: 'tester-two' }, decision('assign-test')),
     ]);
     const saved = await f.repository.rehydrate('run'); assert.equal(saved.revision, 4);
-    assert.deepEqual(saved.state.tasks.map(task => task.assigneeAgentId), ['builder-two', 'tester-two']);
+    assert.deepEqual(saved.state.tasks.map(task => task.ownerAgentId), ['builder-two', 'tester-two']);
     assert.equal(saved.events.filter(event => event.type === 'task.assigned').length, 2); JSON.parse(await fs.readFile(f.file(), 'utf8'));
   });
   await t.test('stale snapshots fail with a revision conflict instead of losing a completed write', async t => {
     const f = await fixture(t); await f.initialize(); const saved = await f.plan();
-    const one = applyOrchestrationCommand(saved.state, { type: 'task.assign', taskId: 'build', assigneeAgentId: 'another' }, decision('one'));
-    const two = applyOrchestrationCommand(saved.state, { type: 'task.assign', taskId: 'test', assigneeAgentId: 'another' }, decision('two'));
+    const one = applyOrchestrationCommand(saved.state, { type: 'task.assign', taskId: 'build', ownerAgentId: 'another' }, decision('one'));
+    const two = applyOrchestrationCommand(saved.state, { type: 'task.assign', taskId: 'test', ownerAgentId: 'another' }, decision('two'));
     await f.repository.save(one, saved.revision);
     await assert.rejects(f.repository.save(two, saved.revision), failure('REVISION_CONFLICT'));
-    assert.equal((await f.repository.getTasks('run'))[0].assigneeAgentId, 'another');
-    assert.equal((await f.repository.getTasks('run'))[1].assigneeAgentId, 'developer');
+    assert.equal((await f.repository.getTasks('run'))[0].ownerAgentId, 'another');
+    assert.equal((await f.repository.getTasks('run'))[1].ownerAgentId, 'developer');
   });
   await t.test('task transition and dependency promotion events commit together; timestamps hydrate as domain strings', async t => {
     const f = await fixture(t); await f.initialize(); await f.plan();
@@ -163,7 +163,7 @@ test('Orchestration aggregate persistence', async t => {
   });
   for (const [kind, code, edit] of [
     ['broken JSON', 'CORRUPT_JSON', () => '{not json'],
-    ['unsupported schema', 'UNSUPPORTED_SCHEMA', raw => JSON.stringify({ ...raw, schemaVersion: 2 })],
+    ['unsupported schema', 'UNSUPPORTED_SCHEMA', raw => JSON.stringify({ ...raw, schemaVersion: 99 })],
     ['invalid date', 'INVALID_RECORD', raw => JSON.stringify({ ...raw, run: { ...raw.run, createdAt: 'not a date' } })],
     ['invalid calendar date', 'INVALID_RECORD', raw => JSON.stringify({ ...raw, run: { ...raw.run, createdAt: '2026-02-31T00:00:00.000Z' } })],
     ['unknown event', 'INVALID_RECORD', raw => JSON.stringify({ ...raw, events: [{ ...raw.events[0], type: 'untrusted' }] })],
@@ -211,4 +211,28 @@ test('Orchestration aggregate persistence', async t => {
     await fs.copyFile(f.file(id), f.file('other'));
     await assert.rejects(f.repository.getRun('other'), failure('INVALID_RECORD'));
   });
+  await t.test('schema v1 migrates atomically without losing failed attempts, owner, normal Reviewer task or history', async t => {
+    const f = await fixture(t); await f.initialize();
+    await f.service.apply('run', {type:'plan.initialize',id:'plan',summary:'Work',tasks:[task('developer'),{...task('tester',['developer']),ownerAgentId:'tester'},{...task('reviewer',['tester']),title:'Review signup implementation',ownerAgentId:'reviewer'}]},decision('initial'));
+    await f.service.apply('run',{type:'task.transition',taskId:'developer',status:'working'},decision('start',{agentId:'developer'}));
+    await f.service.apply('run',{type:'task.finish',taskId:'developer',status:'failed',failure:'VALIDATION_FAILED',reason:'VALIDATION_FAILED',report:{summary:'Preparation failed',evidence:[],changedFiles:[],durationMs:1,agentName:'Developer'}},decision('fail',{agentId:'developer'}));
+    const canonical=JSON.parse(await fs.readFile(f.file(),'utf8'));
+    function legacy(value){if(Array.isArray(value))return value.map(legacy);if(!value||typeof value!=='object')return value;const result={};for(const [key,item]of Object.entries(value))result[key==='ownerAgentId'?'assigneeAgentId':key]=legacy(item);if('delegatorAgentId'in value&&'title'in value){result.requiresReview=true;result.reviewerAgentId='reviewer'}return result;}
+    const old={...legacy(canonical),schemaVersion:1};await fs.writeFile(f.file(),JSON.stringify(old));
+    let writes=0;const writer=new AtomicFileWriter(),repo=new JsonOrchestrationRepository(f.location,{write:async(...args)=>{writes++;await writer.write(...args)}});
+    const first=await repo.rehydrate('run'),bytes=await fs.readFile(f.file(),'utf8');assert.equal(writes,1);assert.equal(JSON.parse(bytes).schemaVersion,2);
+    assert.deepEqual(first.state.tasks,canonical.tasks);assert.deepEqual(first.currentPlan.taskIds,['developer','tester','reviewer']);assert.equal(first.state.tasks[0].status,'failed');assert.deepEqual(first.state.tasks[0].attempts,canonical.tasks[0].attempts);
+    assert.equal(first.state.tasks[2].title,'Review signup implementation');assert.equal(first.state.tasks[2].ownerAgentId,'reviewer');assert.ok(!JSON.stringify(first).includes('requiresReview'));assert.equal(first.events.length,old.events.length);
+    assert.ok(JSON.parse(bytes).legacyEventMetadata.some(e=>e.fields['task.requiresReview']===true));assert.deepEqual(await repo.rehydrate('run'),first);assert.equal(writes,1);assert.equal(await fs.readFile(f.file(),'utf8'),bytes);
+    const {retryableTask}=require(path.join(output,'domain/orchestration/taskAttempts'));assert.equal(retryableTask(first.state.tasks[0]),false);
+    await repo.update('run',state=>({state,events:[]}));assert.deepEqual(JSON.parse(await fs.readFile(f.file(),'utf8')).legacyEventMetadata,JSON.parse(bytes).legacyEventMetadata);
+  });
+  await t.test('legacy pending status and events become needs_attention; failed migration retains original bytes',async t=>{
+    const f=await fixture(t);await f.initialize();await f.service.apply('run',{type:'plan.initialize',id:'plan',summary:'Outcome',tasks:[task('one')]},decision('plan'));
+    await f.service.apply('run',{type:'task.transition',taskId:'one',status:'working'},decision('start',{agentId:'developer'}));await f.service.apply('run',{type:'task.transition',taskId:'one',status:'needs_attention'},decision('attention',{agentId:'developer'}));
+    const current=JSON.parse(await fs.readFile(f.file(),'utf8'));const text=JSON.stringify({...current,schemaVersion:1}).replaceAll('needs_attention','needs_review').replaceAll('ownerAgentId','assigneeAgentId');await fs.writeFile(f.file(),text);
+    const failed=new JsonOrchestrationRepository(f.location,{write:async()=>{throw Error('fixture write failure')}});await assert.rejects(failed.rehydrate('run'),failure('WRITE_FAILED'));assert.equal(await fs.readFile(f.file(),'utf8'),text);
+    const loaded=await f.repository.rehydrate('run');assert.equal(loaded.state.tasks[0].status,'needs_attention');assert.ok(loaded.events.some(e=>e.type==='task.needs_attention'));assert.ok(!JSON.stringify(loaded).includes('needs_review'));
+  });
+
 });

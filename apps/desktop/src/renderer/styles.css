@@ -177,7 +177,7 @@ svg { display: block; flex-shrink: 0; }
   --task-working-color: #18734b;
   --task-blocked-color: #95600b;
   --task-failed-color: #ba3535;
-  --task-review-color: #6658ad;
+  --task-attention-color: #6658ad;
   background: var(--surface-composer);
   border: 1px solid var(--border-composer);
   border-radius: 12px;
@@ -206,11 +206,11 @@ svg { display: block; flex-shrink: 0; }
 .task-status-icon--working, .task-status-label--working, .task-status-icon--completed { color: var(--task-working-color); }
 .task-status-icon--blocked, .task-status-label--blocked { color: var(--task-blocked-color); }
 .task-status-icon--failed, .task-status-label--failed { color: var(--task-failed-color); }
-.task-status-icon--needs_review, .task-status-label--needs_review { color: var(--task-review-color); }
+.task-status-icon--needs_attention, .task-status-label--needs_attention { color: var(--task-attention-color); }
 .task-status-icon--working { animation: workspace-task-pulse 2.4s ease-in-out infinite; }
 @keyframes workspace-task-pulse { 50% { opacity: .55; } }
 @media (prefers-color-scheme: dark) {
-  .workspace-right-panel { --task-working-color: #79cba4; --task-blocked-color: #d9b16b; --task-failed-color: #f28c8c; --task-review-color: #b7a6ed; }
+  .workspace-right-panel { --task-working-color: #79cba4; --task-blocked-color: #d9b16b; --task-failed-color: #f28c8c; --task-attention-color: #b7a6ed; }
 }
 @media (prefers-reduced-motion: reduce) {
   .task-status-icon--working { animation: none; }
@@ -507,3 +507,5 @@ svg { display: block; flex-shrink: 0; }
 .execution-plan > header span { color: var(--text-muted); font-size: 12px; }
 .execution-plan > p { margin: 12px 0; }
 .planning-activity { display: flex; gap: 8px; align-items: center; color: var(--text-muted); padding: 12px 0; font-size: 13px; }
+
+.execution-action { margin-top: 12px; padding: 7px 12px; border: 1px solid var(--border-composer); border-radius: 6px; background: var(--surface-context); color: var(--text-primary); cursor: pointer; }

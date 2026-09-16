@@ -90,7 +90,7 @@ test('Workspace Tasks / Team presentation', async t => {
     assert.doesNotMatch(html, /%/);
   });
   await t.test('all eight statuses have correct visible labels and matching icon classes', () => {
-    assert.deepEqual(Object.values(taskStatusLabels), ['Planned', 'Ready', 'Working', 'Blocked', 'Needs review', 'Done', 'Failed', 'Cancelled']);
+    assert.deepEqual(Object.values(taskStatusLabels), ['Planned', 'Ready', 'Working', 'Blocked', 'Needs attention', 'Completed', 'Failed', 'Cancelled']);
     for (const [status, label] of Object.entries(taskStatusLabels)) {
       const html = render(TaskRow, { task: task(status, status) });
       assert.ok(html.includes('>' + label + '</span>'));

@@ -1,10 +1,14 @@
 import type { AgentTask, OrchestrationCommand, OrchestrationEvent, OrchestrationState } from '../../src/domain/orchestration';
 
 export function immutableContracts(task: AgentTask, state: OrchestrationState): void {
+  // @ts-expect-error Review is not a domain field.
+  task.requiresReview;
+  // @ts-expect-error A reviewer is an ordinary task owner.
+  task.reviewerAgentId;
   // @ts-expect-error State transitions belong to the domain API.
   task.status = 'working';
   // @ts-expect-error One assignee, never an array.
-  task.assigneeAgentId = ['lead', 'developer'];
+  task.ownerAgentId = ['lead', 'developer'];
   // @ts-expect-error Nested collections are readonly too.
   task.dependsOn.push('another');
   // @ts-expect-error Run status is immutable.

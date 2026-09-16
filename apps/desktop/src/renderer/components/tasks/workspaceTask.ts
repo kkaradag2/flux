@@ -1,4 +1,4 @@
-export type WorkspaceTaskStatus = 'planned' | 'ready' | 'working' | 'blocked' | 'needs_review' | 'completed' | 'failed' | 'cancelled';
+export type WorkspaceTaskStatus = import('../../../shared/task-status').TaskStatus;
 
 export type WorkspaceTaskItem = {
   id: string;
@@ -10,5 +10,5 @@ export type WorkspaceTaskItem = {
 
 export const taskStatusLabels: Record<WorkspaceTaskStatus, string> = {
   planned: 'Planned', ready: 'Ready', working: 'Working', blocked: 'Blocked',
-  needs_review: 'Needs review', completed: 'Done', failed: 'Failed', cancelled: 'Cancelled',
+  needs_attention: 'Needs attention', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled',
 };

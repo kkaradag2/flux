@@ -41,6 +41,7 @@ export class JsonOrchestrationRepository implements OrchestrationRepository {
     try { data = JSON.parse(source); } catch { throw new PersistenceError('CORRUPT_JSON'); }
     const record = parseOrchestrationRecord(data);
     if (filename(record.run.id) !== path.basename(file)) throw new PersistenceError('INVALID_RECORD');
+    if ((data as { schemaVersion?: unknown }).schemaVersion === 1) await this.write(file, record);
     return record;
   }
   private async write(file: string, record: OrchestrationRecord): Promise<RehydratedOrchestration> {
@@ -69,10 +70,10 @@ export class JsonOrchestrationRepository implements OrchestrationRepository {
     }
     if (current.tasks.some(task => !result.state.tasks.some(next => next.id === task.id))) throw new PersistenceError('INVALID_RECORD');
     if (result.events.length === 0 && !same(result.state, rehydrated(current).state)) throw new PersistenceError('INVALID_RECORD');
-    return parseOrchestrationRecord({ schemaVersion: 1, revision: current.revision + 1, ...result.state, events: [...current.events, ...result.events] });
+    return parseOrchestrationRecord({ schemaVersion: 2, legacyEventMetadata: current.legacyEventMetadata, revision: current.revision + 1, ...result.state, events: [...current.events, ...result.events] });
   }
   async create(result: OrchestrationResult): Promise<RehydratedOrchestration> {
-    const record = parseOrchestrationRecord({ schemaVersion: 1, revision: 1, ...structuredClone(result.state), events: structuredClone(result.events) });
+    const record = parseOrchestrationRecord({ schemaVersion: 2, revision: 1, ...structuredClone(result.state), events: structuredClone(result.events) });
     return this.forRun(record.run.id, async file => {
       try { await this.read(file); } catch (error) {
         if (error instanceof PersistenceError && error.code === 'NOT_FOUND') return this.write(file, record);

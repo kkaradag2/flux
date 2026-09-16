@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef } from 'react';
 import type { ChatMessage } from '../../hooks/useSingleAgentChat';
 import { AgentAvatar } from '../avatars/AgentAvatar';
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
-export function ChatMessageList({ messages, orchestration, planningName }: { messages: readonly ChatMessage[]; orchestration?: ConversationOrchestrationView | null; planningName?: string | null }) {
+export function ChatMessageList({ messages, orchestration, planningName, onExecute, onStop, onRetry }: { messages: readonly ChatMessage[]; orchestration?: ConversationOrchestrationView | null; planningName?: string | null; onExecute?: () => void; onStop?: () => void; onRetry?: () => void }) {
   const list = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => { if (list.current) list.current.scrollTop = list.current.scrollHeight; }, [messages, orchestration, planningName]);
   return <div ref={list} className="chat-message-list" role="log" aria-label="Chat messages" aria-live="polite"><div className="chat-message-content">{messages.map(message => (
@@ -12,9 +12,9 @@ export function ChatMessageList({ messages, orchestration, planningName }: { mes
       {message.role === 'user' ? <><span className="message-author">You</span><p>{message.text}</p></> : message.role === 'error' ? <p>{message.text}</p> : <>
         <header className="agent-message-header">{message.agent && <AgentAvatar avatar={message.agent.avatar} size={24} />}<span>{message.agent?.name ?? 'Agent'}</span>{message.streaming && <span className="runtime-update-spinner" role="status" aria-label="Agent is working" />}</header>
         {message.text && <MarkdownPreview value={message.text} />}
-        {message.planRunId && orchestration?.run?.id === message.planRunId && <ExecutionPlanCard view={orchestration} />}
+        {message.planRunId && orchestration?.run?.id === message.planRunId && <ExecutionPlanCard view={orchestration} onExecute={onExecute} onStop={onStop} onRetry={onRetry} />}
         {message.streaming && <span className="streaming-caret" aria-hidden="true" />}
       </>}
     </article>
-  ))}{planningName && <div className="planning-activity" role="status"><span className="runtime-update-spinner" />{planningName} is planning…</div>}</div></div>;
+  ))}{planningName && <div className="planning-activity" role="status"><span className="runtime-update-spinner" />{planningName}</div>}</div></div>;
 }

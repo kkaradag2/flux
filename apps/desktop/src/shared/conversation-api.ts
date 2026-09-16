@@ -4,6 +4,8 @@ export type ConversationStatus = 'running' | 'completed' | 'failed' | 'cancelled
 export type ConversationMessage = {
   id: string; role: 'user' | 'agent' | 'system'; content: string; agentId: string | null;
   planRunId?: string;
+  superseded?: boolean;
+  agentSnapshot?: ChatAgent;
   createdAt: string; status: 'streaming' | 'completed' | 'failed' | 'cancelled';
 };
 export type ConversationSummary = {

@@ -1,3 +1,4 @@
+import type { TaskExecutionCoordinator } from '../../application/orchestration/execution/TaskExecutionCoordinator';
 import type { TeamConversationJournal } from './TeamConversationJournal';
 import type { TeamPromptCoordinator, TeamPromptResult } from '../../application/orchestration/TeamPromptCoordinator';
 import type { OrchestrationRepository } from '../../application/orchestration/OrchestrationRepository';
@@ -23,12 +24,13 @@ function continueRequest(value: unknown): ContinueTeamPromptRequest {
   const data = input(value, ['runId', 'message']); return { runId: text(data.runId, 200), message: text(data.message, 32000) };
 }
 export class OrchestrationService {
+  private executions = new Map<string, { owner: number; controller: AbortController; done: Promise<import('../../shared/orchestration-api').ConversationOrchestrationView> }>();
   private active = new Map<string, { owner: number; controller: AbortController; done: Promise<unknown> }>();
   private owners = new Map<number, { closed: boolean }>();
   private stopped = false;
   constructor(private source: MainTeamPromptSource, private repository: OrchestrationRepository,
     private coordinator: Pick<TeamPromptCoordinator, 'start' | 'continueRun'>, private views: OrchestrationViews, private ready: () => boolean,
-    private available: () => boolean = () => true, private journal?: TeamConversationJournal) {}
+    private available: () => boolean = () => true, private journal?: TeamConversationJournal, private tasks?: TaskExecutionCoordinator) {}
   subscribe: OrchestrationViews['subscribe'] = listener => this.views.subscribe(listener);
   async get(conversationId: unknown) {
     if (!this.available()) throw new BoundaryError('ORCHESTRATION_FAILED');
@@ -75,6 +77,7 @@ export class OrchestrationService {
     const lifetime = this.lifetime(owner);
     let run;
     try { run = await this.repository.getRun(request.runId); } catch { throw new BoundaryError('RUN_NOT_FOUND'); }
+    if (this.executions.has(run.id)) throw new BoundaryError('ORCHESTRATION_BUSY');
     return this.exclusive(owner, run.conversationId, async signal => {
       if (!['waiting_input', 'completed', 'failed', 'cancelled'].includes(run.status)) throw new BoundaryError('RUN_NOT_WAITING_INPUT');
       await this.source.validate(run.conversationId, run.projectId);
@@ -98,13 +101,40 @@ export class OrchestrationService {
     if (active.owner !== owner) throw new BoundaryError('ORCHESTRATION_BUSY');
     active.controller.abort(); await active.done.catch(() => undefined);
   }
-  closeOwner(owner: number): void {
+  execute(owner: number, value: unknown, retry = false) {
+    const data = input(value, ['runId']), id = text(data.runId, 200), lifetime = this.lifetime(owner);
+    const existing = this.executions.get(id);
+    if (existing) { if (existing.owner !== owner) throw new BoundaryError('EXECUTION_BUSY'); return existing.done; }
+    if (this.stopped || lifetime.closed || !this.available() || !this.tasks) throw new BoundaryError('EXECUTION_FAILED');
+    if (!this.ready()) throw new BoundaryError('RUNTIME_NOT_READY');
+    const controller = new AbortController();
+    const done = Promise.resolve().then(async () => {
+      const run = await this.repository.getRun(id);
+      await this.source.validate(run.conversationId, run.projectId);
+      await this.journal?.assertTeam(run.conversationId, run.teamId);
+      if (this.active.has(run.conversationId)) throw new BoundaryError('ORCHESTRATION_BUSY');
+      await this.tasks!.execute(id, controller.signal, retry);
+      return this.views.project(await this.repository.rehydrate(id));
+    }).finally(() => this.executions.delete(id));
+    this.executions.set(id, { owner, controller, done }); return done;
+  }
+  async cancelExecution(owner: number, value: unknown): Promise<void> {
+    const data = input(value, ['runId']), active = this.executions.get(text(data.runId, 200));
+    if (!active) return;
+    if (active.owner !== owner) throw new BoundaryError('EXECUTION_BUSY');
+    active.controller.abort(); await active.done.catch(() => undefined);
+  }
+  async closeOwner(owner: number): Promise<void> {
+    for (const value of this.executions.values()) if (value.owner === owner) value.controller.abort();
     const lifetime = this.owners.get(owner); if (lifetime) lifetime.closed = true;
     this.owners.delete(owner);
     for (const value of this.active.values()) if (value.owner === owner) value.controller.abort();
+    await Promise.allSettled([...this.executions.values(), ...this.active.values()].filter(value => value.owner === owner).map(value => value.done));
   }
   async shutdown(): Promise<void> {
     this.stopped = true;
+    for (const value of this.executions.values()) value.controller.abort();
+    await Promise.allSettled([...this.executions.values()].map(value => value.done));
     for (const lifetime of this.owners.values()) lifetime.closed = true;
     this.owners.clear();
     for (const value of this.active.values()) value.controller.abort();

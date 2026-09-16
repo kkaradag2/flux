@@ -4,7 +4,7 @@ import { invariant, nonEmpty } from './OrchestrationError';
 export function validateTaskGraph(runId: string, tasks: readonly AgentTask[]): void {
   const byId = new Map<string, AgentTask>();
   for (const task of tasks) {
-    nonEmpty(task.id, 'Task ID'); nonEmpty(task.assigneeAgentId, 'Assignee'); nonEmpty(task.delegatorAgentId, 'Delegator');
+    nonEmpty(task.id, 'Task ID'); nonEmpty(task.ownerAgentId, 'Assignee'); nonEmpty(task.delegatorAgentId, 'Delegator');
     invariant(task.runId === runId, 'RUN_MISMATCH', 'All dependencies must belong to the same run.');
     invariant(!byId.has(task.id), 'DUPLICATE_TASK_ID', 'Task IDs must be unique within a run.');
     byId.set(task.id, task);

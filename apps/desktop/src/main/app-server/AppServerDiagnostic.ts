@@ -1,7 +1,10 @@
 import { SmokeTestError } from './contracts';
 export type AppServerDiagnostic = Readonly<{
  method: 'initialize' | 'thread/start' | 'thread/resume' | 'turn/start' | 'turn/completed' | 'transport';
- category: 'RPC_ERROR' | 'RESPONSE_ID_MISMATCH' | 'MALFORMED_PROTOCOL' | 'TURN_FAILED' | 'OUTPUT_SCHEMA_REJECTED' | 'PROCESS_EXITED';
+ category: 'RPC_ERROR' | 'RESPONSE_ID_MISMATCH' | 'MALFORMED_PROTOCOL' | 'TURN_FAILED' | 'OUTPUT_SCHEMA_REJECTED' | 'PROCESS_EXITED' | 'PREPARATION_FAILED';
+ stage?: 'runtime_preparation';
+ subcode?: import('./RuntimePreparation').PreparationCode;
+ field?: import('./RuntimePreparation').PreparationField;
  protocolCode?: number;
 }>;
 export class AppServerDiagnosticError extends SmokeTestError {

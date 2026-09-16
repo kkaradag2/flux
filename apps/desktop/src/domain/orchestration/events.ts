@@ -25,6 +25,9 @@ export type OrchestrationEventPayload =
   | Readonly<{ type: 'plan.created'; agentId: string; plan: ExecutionPlan }>
   | Readonly<{ type: 'plan.revised'; agentId: string; previousVersion: number; plan: ExecutionPlan }>
   | (Readonly<{ type: 'task.created'; delegatorAgentId: string; task: AgentTask }> & TaskEvent)
+  | (Readonly<{ type: 'task.execution_phase_changed'; phase: import('./models').ExecutionPhase }> & TaskEvent)
+  | (Readonly<{ type: 'task.session_set'; session: NonNullable<AgentTask['session']> }> & TaskEvent)
+  | (Readonly<{ type: 'task.execution_recorded'; report: NonNullable<AgentTask['execution']> }> & TaskEvent)
   | (Readonly<{ type: 'task.assigned'; previousAgentId: string | null }> & TaskEvent)
   | (Readonly<{ type: 'task.started'; from: 'ready'; status: 'working' }> & TaskEvent)
   | (Readonly<{ type: 'task.dependencies_changed'; dependsOn: readonly string[]; from: AgentTaskStatus; status: AgentTaskStatus }> & TaskEvent)
